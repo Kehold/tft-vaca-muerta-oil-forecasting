@@ -18,7 +18,6 @@ __pycache__/
 .env.*
 credentials.yml
 *.key
-# *.json  # if you have GCP/Azure creds
 
 # Python cache / logs
 *.log
@@ -38,33 +37,12 @@ Thumbs.db
 # Pytest cache
 .pytest_cache/
 
-# Model results / artifacts
-# Ignore everything under artifacts by default
-data/artifacts/**
-
-# Re-include the four folders we need for Streamlit Cloud
-!data/artifacts/explain/
-!data/artifacts/metrics/
-!data/artifacts/models/
-!data/artifacts/predictions/
-
-# Explicitly ignore runs
+# Model results / artifacts - exclude runs
 data/artifacts/runs/
-
-
-*.pkl
-# *.pt         # PyTorch model weights
-# *.ckpt         # PyTorch model weights 
-
-# Poetry lock file (optional to include)
-# poetry.lock
-
-# Reports / exports
-*.docx
-*.pdf
-# *.csv
-# *.png
-# *.jpg
 
 # Temporary files
 tmp/
+
+# Large files (optional, adjust as needed)
+# *.pt
+# *.ckpt

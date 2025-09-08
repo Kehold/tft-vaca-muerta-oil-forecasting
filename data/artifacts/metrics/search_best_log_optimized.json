@@ -1,0 +1,33 @@
+{
+  "cfg": {
+    "input_chunk_length": 24,
+    "output_chunk_length": 6,
+    "hidden_size": 128,
+    "num_attention_heads": 8,
+    "lstm_layers": 2,
+    "hidden_continuous_size": 32,
+    "dropout": 0.1,
+    "batch_size": 64,
+    "n_epochs": 30,
+    "lr": 0.0015,
+    "weight_decay": 0.0
+  },
+  "metrics": {
+    "input_chunk_length": 24,
+    "output_chunk_length": 6,
+    "hidden_size": 128,
+    "num_attention_heads": 8,
+    "lstm_layers": 2,
+    "hidden_continuous_size": 32,
+    "dropout": 0.1,
+    "batch_size": 64,
+    "n_epochs": 30,
+    "lr": 0.0015,
+    "weight_decay": 0.0,
+    "mql_0_50": 24.85623934248885,
+    "rmse": 28.08714912217531,
+    "mae": 24.85623934248885,
+    "smape": 61.6561725334888,
+    "mic_10_90": 0.696045197740113
+  }
+}
