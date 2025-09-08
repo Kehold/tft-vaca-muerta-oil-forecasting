@@ -1,0 +1,70 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Poetry virtualenv
+.venv/
+
+# VSCode settings
+.vscode/
+
+# Streamlit settings & cache
+.streamlit/
+.streamlit_cache/
+
+# Env & secrets
+.env
+.env.*
+credentials.yml
+*.key
+# *.json  # if you have GCP/Azure creds
+
+# Python cache / logs
+*.log
+*.pot
+*.pyc
+*.pyo
+
+# Jupyter Notebook checkpoints
+.ipynb_checkpoints
+
+# macOS
+.DS_Store
+
+# Windows
+Thumbs.db
+
+# Pytest cache
+.pytest_cache/
+
+# Model results / artifacts
+# Ignore everything under artifacts by default
+data/artifacts/**
+
+# Re-include the four folders we need for Streamlit Cloud
+!data/artifacts/explain/
+!data/artifacts/metrics/
+!data/artifacts/models/
+!data/artifacts/predictions/
+
+# Explicitly ignore runs
+data/artifacts/runs/
+
+
+*.pkl
+# *.pt         # PyTorch model weights
+# *.ckpt         # PyTorch model weights 
+
+# Poetry lock file (optional to include)
+# poetry.lock
+
+# Reports / exports
+*.docx
+*.pdf
+# *.csv
+# *.png
+# *.jpg
+
+# Temporary files
+tmp/
