@@ -98,18 +98,18 @@ def _lower_is_better(metric_key: str) -> bool:
 
 
 def _logspace_lrs() -> List[float]:
-    return [1e-3, 1.5e-3]
+    return [5e-4, 1e-3, 1.5e-3]
 
 
 def _build_param_list(n_iter: int, seed: int) -> list[dict]:
     param_grid = {
-        "hidden_size":            [128],
-        "num_attention_heads":    [8],
-        "lstm_layers":            [3, 4],
-        "hidden_continuous_size": [16],
-        "dropout":                [0.05, 0.1],
+        "hidden_size":            [96, 128],
+        "num_attention_heads":    [4, 8],
+        "lstm_layers":            [2, 3, 4],
+        "hidden_continuous_size": [16, 32],
+        "dropout":                [0.05, 0.1, 0.15],
         "batch_size":             [128],
-        "n_epochs":               [20, 30],
+        "n_epochs":               [20, 30, 40],
         "lr":                     _logspace_lrs(),
         "weight_decay":           [0.0],
     }
