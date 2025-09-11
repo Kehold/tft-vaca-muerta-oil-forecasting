@@ -26,13 +26,23 @@ BUFFER      = 6
 STATIC_CATS  = ["operator", "area"]
 STATIC_REALS = ["campaign", "horizontal_length","total_depth",
                 "number_of_stages","fluid_volume_m3","proppant_volume_lbm",
-                "number_of_stages_missing","fluid_volume_m3_missing",
-                "proppant_volume_lbm_missing","total_depth_missing"]
+                # "number_of_stages_missing","fluid_volume_m3_missing",
+                # "proppant_volume_lbm_missing","total_depth_missing",
+                # "qi","Di","b" # DCA constants
+                ]
 
-PAST_REALS   = ["gas_rate_mscfd", "water_rate_bpd"]   # (after simplification)
-FUTURE_REALS = ["well_age"]
+PAST_REALS   = ["gas_rate_mscfd", "water_rate_bpd",
+                # "rate_rel_3m", "rate_rel_peak", "cum_oil_rel", 
+                # "dca_bpd" # new variables
+                ]   
+FUTURE_REALS = ["well_age", 
+                # "dca_bpd_log1p"
+                ]
 
 # training
 N_EPOCHS    = 30
 BATCH_SIZE  = 64
 RANDOM_SEED = 42
+
+# DCA
+K_DCA = 24  # or 12/18; must be <= typical warm length

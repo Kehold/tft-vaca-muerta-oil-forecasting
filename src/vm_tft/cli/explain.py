@@ -27,9 +27,10 @@ from vm_tft.cfg import (
     TIME_COL, GROUP_COL, TARGET,
     STATIC_CATS, STATIC_REALS,
     PAST_REALS, FUTURE_REALS,
-    ARTIFACTS,
+    ARTIFACTS, INPUT_CHUNK
 )
 from vm_tft.features import build_future_covariates_well_age_full
+from vm_tft.features import build_future_covariates_dca_full
 from vm_tft.io_utils import ensure_dir, artifact_path, set_seeds
 
 
@@ -361,7 +362,7 @@ def export_pseudo_global_vi(
 
 def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(description="TFT Explainability (local + pseudo-global)")
-    parser.add_argument("--model-path", type=str, default=str(artifact_path("models") / "model_best_log_optimized.pt"))
+    parser.add_argument("--model-path", type=str, default=str(artifact_path("runs") / "search/2025-09-11_03-48-54__baseline_again/model_best.pt"))
     parser.add_argument("--eval-set", type=str, choices=["test", "train"], default="test",
                         help="use TEST (default) or TRAIN for foreground explanations")
     parser.add_argument("--local-wells", type=str, default="0,5,18",
@@ -374,7 +375,7 @@ def main(argv: list[str] | None = None) -> None:
                         help="comma-separated indices for pseudo-global VI (empty => auto sample)")
     parser.add_argument("--matmul-precision", type=str, choices=["highest", "high", "medium"], default="high")
     parser.add_argument("--seed", type=int, default=42)
-    parser.add_argument("--out-root", type=str, default=str(Path(ARTIFACTS) / "explain"))
+    parser.add_argument("--out-root", type=str, default=str(Path(ARTIFACTS) / "explain/"))
     args = parser.parse_args(argv)
 
     torch.set_float32_matmul_precision(args.matmul_precision)
@@ -412,20 +413,56 @@ def main(argv: list[str] | None = None) -> None:
     past_eval = _maybe_ts_from_group_df(df_eval, PAST_REALS)
 
     # future covs (ensure coverage)
-    fut_all_df = build_future_covariates_well_age_full(
+    
+    fut_age_all = build_future_covariates_well_age_full(
         df=df_all, time_col=TIME_COL, group_col=GROUP_COL,
-        completion_col="completion_date", horizon=12, freq=FREQ,
+        completion_col="completion_date", horizon=12, freq=FREQ
     )
-    fut_eval_df = build_future_covariates_well_age_full(
+    
+    fut_dca_all, dca_pars_all = build_future_covariates_dca_full(
+        df=df_all, time_col=TIME_COL, group_col=GROUP_COL,
+        target_col=TARGET, horizon=12, freq=FREQ,
+        fit_k=INPUT_CHUNK, params_out=True
+    )
+    
+    # after building fut_dca with 'dca_bpd'
+    fut_dca_all["dca_bpd_log1p"] = np.log1p(fut_dca_all["dca_bpd"])
+    
+    # merge the FUTURE covariates on [group, time]
+    fut_df_all = fut_age_all.merge(fut_dca_all[[GROUP_COL, TIME_COL, "dca_bpd_log1p"]], on=[GROUP_COL, TIME_COL], how="left")
+    
+    fut_age_eval = build_future_covariates_well_age_full(
         df=df_eval, time_col=TIME_COL, group_col=GROUP_COL,
-        completion_col="completion_date", horizon=12, freq=FREQ,
+        completion_col="completion_date", horizon=12, freq=FREQ
     )
+    
+    fut_dca_eval, dca_pars_eval = build_future_covariates_dca_full(
+        df=df_eval, time_col=TIME_COL, group_col=GROUP_COL,
+        target_col=TARGET, horizon=12, freq=FREQ,
+        fit_k=INPUT_CHUNK, params_out=True
+    )
+    
+    # after building fut_dca with 'dca_bpd'
+    fut_dca_eval["dca_bpd_log1p"] = np.log1p(fut_dca_eval["dca_bpd"])
+    
+        # merge the FUTURE covariates on [group, time]
+    fut_df_eval = fut_age_eval.merge(fut_dca_eval[[GROUP_COL, TIME_COL, "dca_bpd_log1p"]], on=[GROUP_COL, TIME_COL], how="left")
+    
+    
+    # fut_all_df = build_future_covariates_well_age_full(
+    #     df=df_all, time_col=TIME_COL, group_col=GROUP_COL,
+    #     completion_col="completion_date", horizon=12, freq=FREQ,
+    # )
+    # fut_eval_df = build_future_covariates_well_age_full(
+    #     df=df_eval, time_col=TIME_COL, group_col=GROUP_COL,
+    #     completion_col="completion_date", horizon=12, freq=FREQ,
+    # )
     future_all = TimeSeries.from_group_dataframe(
-        df=fut_all_df, time_col=TIME_COL, group_cols=GROUP_COL,
+        df=fut_df_all, time_col=TIME_COL, group_cols=GROUP_COL,
         value_cols=FUTURE_REALS, freq=FREQ,
     )
     future_eval = TimeSeries.from_group_dataframe(
-        df=fut_eval_df, time_col=TIME_COL, group_cols=GROUP_COL,
+        df=fut_df_eval, time_col=TIME_COL, group_cols=GROUP_COL,
         value_cols=FUTURE_REALS, freq=FREQ,
     )
 

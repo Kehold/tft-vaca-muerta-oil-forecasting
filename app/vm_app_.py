@@ -413,16 +413,16 @@ def list_artifacts() -> dict:
     base = Path(ARTIFACTS)
     return {
         "models": {
-            "best_from_search": base / "models" / "model_best_log_optimized.pt", # has MinMax scaler
-            # "best_manual": base / "models" / "model_log_baseline.pt", # has MinMax scaler
+            "best_from_search": base / "models" / "model_best.pt", # has MinMax scaler
+            # "best_manual": base / "models" / "model_log_baseline_repeat.pt", # has MinMax scaler
         },
         "cv": {
-            "overall_metrics": base / "metrics" / "cv_overall_log_baseline.json",
-            "per_series_window": base / "metrics" / "cv_metrics_per_series_window_log_baseline.csv",
+            "overall_metrics": base / "metrics" / "metrics_overall.json",
+            "per_series_window": base / "metrics" / "metrics_per_series_window.csv",
         },
         "search": {
-            "trials_csv": base / "metrics" / "search_trials_log_optimized.csv",
-            "best_config": base / "metrics" / "search_best_log_optimized.json",
+            "trials_csv": base / "metrics" / "search_trials.csv",
+            "best_config": base / "metrics" / "search_best.json",
         },
         "test": {
             # Keep B (has metrics), add C (no metrics by design)
@@ -632,7 +632,7 @@ st.sidebar.markdown("---")
 # # Define the footer HTML and CSS
 # footer_html = """
 # <div style='position: absolute; bottom: 0; width: 100%; background-color: #f1f1f1; text-align: center; padding: 10px 0;'>
-#     <p style='margin: 0; font-size: 12px;'>© 2025 Alexis Ortega | <a href="https://github.com/alexort74"></a></p>
+#     <p style='margin: 0; font-size: 12px;'>© 2025 Alexis Ortega | <a href="https://github.com/alexort74/ttf-vaca-muerta-oil-forecasting"></a></p>
 # </div>
 # """
 
@@ -646,12 +646,12 @@ st.sidebar.markdown("---")
 
 # ---- 0) Home ----
 if section == "Home":
-    st.header("🏠 Home")
+    st.header("🏠 Forecasting Oil Production with Temporal Fusion Transformers")
 
     left, right = st.columns([1.15, 0.85], gap="large")
 
     with left:
-        st.subheader("Goals / Scope")
+        st.subheader("Project Description")
         st.markdown(
             """
 **Goal.** Build robust, explainable monthly production forecasts for Vaca Muerta wells using the
@@ -680,7 +680,7 @@ and model explainability.
         )
 
     with right:
-        st.image("data/images/tft.png", width='stretch', caption="TFT forecasting architecture")
+        st.image("data/images/tft paper.png", width='stretch', caption="TFT forecasting architecture")
 
 
 # ---- 1) Data Explorer ----
@@ -1117,8 +1117,10 @@ elif section == "Test Predictions":
             yaxis_title="Cumulative oil (bbl)",
         )
 
+        final_p10_total = float(cum_p10.iloc[-1]) if len(cum_p10) else None
         final_p50_total = float(cum_p50.iloc[-1]) if len(cum_p50) else None
-        return fig, final_p50_total
+        final_p90_total = float(cum_p90.iloc[-1]) if len(cum_p90) else None
+        return fig, final_p10_total, final_p50_total, final_p90_total
 
     # Build the cumulative plot + KPI for the selected well
     if active_df.empty or well_id is None:
@@ -1139,7 +1141,7 @@ elif section == "Test Predictions":
             if missing:
                 c2.warning(f"Prediction CSV missing required columns: {missing}")
             else:
-                fig_cum, final_p50 = _plot_cumulative_oil_caseC(
+                fig_cum, final_p10, final_p50, final_p90 = _plot_cumulative_oil_caseC(
                     hist_df=df_hist[[TIME_COL, "cum_oil_bbl"]],
                     pred_df=df_pred[need_cols].dropna(subset=["p50"]),
                     time_col=TIME_COL,
@@ -1149,25 +1151,37 @@ elif section == "Test Predictions":
 
                 if (fig_cum is not None) and (final_p50 is not None):
                     # --- KPI BOX in LEFT column (under Case B table), height matched to plot ---
+                    start_date = df_pred[TIME_COL].min()
+                    hist_up_to = df_hist[df_hist[TIME_COL] <= start_date]
+                    start_cum_val = float(hist_up_to["cum_oil_bbl"].iloc[-1]) if not hist_up_to.empty else 0.0
+
+                    inc_p10 = final_p10 - start_cum_val if final_p10 is not None else None
+                    inc_p50 = final_p50 - start_cum_val if final_p50 is not None else None
+                    inc_p90 = final_p90 - start_cum_val if final_p90 is not None else None
                     c1.markdown(
                         f"""
                         <div style="
-                            border:1px solid #ddd;
-                            border-radius:8px;
-                            padding:16px;
-                            text-align:center;
-                            background-color:#f9f9f9;
-                            height:150px;               /* match the plot height to align bottoms */
-                            display:flex;
-                            flex-direction:column;
-                            justify-content:center;
+                            border:1px solid #ddd; border-radius:8px; padding:12px;
+                            background-color:#f9f9f9; height:150px;
+                            display:flex; align-items:center; justify-content:center;
                         ">
-                            <div style="font-size:15px; font-weight:600; color:#666; margin-bottom:6px;">
-                                5-yr P50 Cum
+                        <div style="display:flex; gap:16px; width:100%; max-width:720px; justify-content:space-between;">
+                            <div style="flex:1; text-align:center;">
+                            <div style="font-size:13px; font-weight:600; color:#666; margin-bottom:4px;">5-yr P10 Cum</div>
+                            <div style="font-size:20px; font-weight:700; color:#000;">{final_p10:,.0f} bbl</div>
+                            <div style="font-size:12px; color:#888;">Δ {inc_p10:,.0f} bbl</div>
                             </div>
-                            <div style="font-size:22px; font-weight:700; color:#000;">
-                                {final_p50:,.0f} bbl
+                            <div style="flex:1; text-align:center;">
+                            <div style="font-size:13px; font-weight:600; color:#666; margin-bottom:4px;">5-yr P50 Cum</div>
+                            <div style="font-size:20px; font-weight:700; color:#000;">{final_p50:,.0f} bbl</div>
+                            <div style="font-size:12px; color:#888;">Δ {inc_p50:,.0f} bbl</div>
                             </div>
+                            <div style="flex:1; text-align:center;">
+                            <div style="font-size:13px; font-weight:600; color:#666; margin-bottom:4px;">5-yr P90 Cum</div>
+                            <div style="font-size:20px; font-weight:700; color:#000;">{final_p90:,.0f} bbl</div>
+                            <div style="font-size:12px; color:#888;">Δ {inc_p90:,.0f} bbl</div>
+                            </div>
+                        </div>
                         </div>
                         """,
                         unsafe_allow_html=True,
@@ -1177,11 +1191,11 @@ elif section == "Test Predictions":
                     c2.plotly_chart(fig_cum, width='stretch', height=350)
 
                     # Optional: incremental P50 over forecast window (caption on right)
-                    start_date = df_pred[TIME_COL].min()
-                    hist_up_to = df_hist[df_hist[TIME_COL] <= start_date]
-                    start_cum_val = float(hist_up_to["cum_oil_bbl"].iloc[-1]) if not hist_up_to.empty else 0.0
-                    inc_p50 = final_p50 - start_cum_val
-                    c2.caption(f"Incremental P50 over forecast window: {inc_p50:,.0f} bbl")
+                    # start_date = df_pred[TIME_COL].min()
+                    # hist_up_to = df_hist[df_hist[TIME_COL] <= start_date]
+                    # start_cum_val = float(hist_up_to["cum_oil_bbl"].iloc[-1]) if not hist_up_to.empty else 0.0
+                    # inc_p50 = final_p50 - start_cum_val
+                    # c2.caption(f"Incremental P50 over forecast window: {inc_p50:,.0f} bbl")
                 else:
                     c2.info("Not enough prediction data to build cumulative plot.")
 
@@ -1283,5 +1297,5 @@ elif section == "Explainability":
 # ========== Footer ==========
 st.markdown("---")
 st.caption(
-    "© Alexis Ortega • Vaca Muerta TFT • Streamlit dashboard • https://github.com/alexort74"
+    "© Alexis Ortega • Vaca Muerta TFT • Streamlit dashboard • https://github.com/alexort74/ttf-vaca-muerta-oil-forecasting"
 )

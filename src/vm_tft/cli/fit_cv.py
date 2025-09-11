@@ -29,6 +29,7 @@ from vm_tft.io_utils import (
     new_run_dir, write_json, copy_as_pointer, update_best_if_better,
 )
 from vm_tft.features import build_future_covariates_well_age_full
+from vm_tft.features import build_future_covariates_dca_full
 from vm_tft.modeling import build_tft, default_add_encoders
 from vm_tft.evaluate import metrics_from_cv
 
@@ -72,16 +73,16 @@ def _make_scalers(
     """
     if use_log1p:
         log_mapper = InvertibleMapper(fn=np.log1p, inverse_fn=np.expm1, name="log1p")
-        y_scaler = DartsPipeline([log_mapper, Scaler(MinMaxScaler())])
-        x_past   = DartsPipeline([log_mapper, Scaler(MinMaxScaler())]) if has_past else None
+        y_scaler = DartsPipeline([log_mapper, Scaler()])
+        x_past   = DartsPipeline([log_mapper, Scaler()]) if has_past else None
         if has_future:
-            x_fut = DartsPipeline([log_mapper, Scaler(MinMaxScaler())]) if log_future else Scaler(MinMaxScaler())
+            x_fut = DartsPipeline([log_mapper, Scaler()]) if log_future else Scaler()
         else:
             x_fut = None
     else:
-        y_scaler = Scaler(MinMaxScaler())
-        x_past   = Scaler(MinMaxScaler()) if has_past else None
-        x_fut    = Scaler(MinMaxScaler()) if has_future else None
+        y_scaler = Scaler()
+        x_past   = Scaler() if has_past else None
+        x_fut    = Scaler() if has_future else None
 
     return y_scaler, x_past, x_fut
 
@@ -152,6 +153,24 @@ def main(argv: list[str] | None = None) -> None:
 
     # ---------- covariates ----------
     past_covariates = _maybe_ts_from_group_df(df, PAST_REALS)
+    
+    # fut_age = build_future_covariates_well_age_full(
+    #     df=df, time_col=TIME_COL, group_col=GROUP_COL,
+    #     completion_col="completion_date", 
+    #     horizon=FORECAST_H, freq=FREQ
+    # )
+    
+    # fut_dca, dca_pars = build_future_covariates_dca_full(
+    #     df=df, time_col=TIME_COL, group_col=GROUP_COL,
+    #     target_col=TARGET, horizon=FORECAST_H, freq=FREQ,
+    #     fit_k=INPUT_CHUNK, params_out=True
+    # )
+    
+    # # after building fut_dca with 'dca_bpd'
+    # fut_dca["dca_bpd_log1p"] = np.log1p(fut_dca["dca_bpd"])
+    
+    # # merge the FUTURE covariates on [group, time]
+    # fut_df = fut_age.merge(fut_dca[[GROUP_COL, TIME_COL, "dca_bpd_log1p"]], on=[GROUP_COL, TIME_COL], how="left")
 
     fut_df = build_future_covariates_well_age_full(
         df=df, time_col=TIME_COL, group_col=GROUP_COL,

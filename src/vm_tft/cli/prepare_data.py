@@ -4,10 +4,39 @@ from pathlib import Path
 import pandas as pd
 import numpy as np
 
-from vm_tft.cfg import RAW_DIR, PROC_DIR, INPUT_CHUNK, FORECAST_H, N_WINDOWS, BUFFER
+from vm_tft.cfg import RAW_DIR, PROC_DIR, INPUT_CHUNK, FORECAST_H, N_WINDOWS, BUFFER, TARGET, K_DCA
 
 from vm_tft.datasets import reindex_group
 from vm_tft.io_utils import ensure_dir
+from vm_tft.physics_dca import fit_arps_first_k_months, make_dca_curve
+
+EPS = 1e-6
+
+def _add_relative_features(df: pd.DataFrame, group_col: str, time_col: str, target_col: str) -> pd.DataFrame:
+    """Add rate_rel_3m, rate_rel_peak, cum_oil_rel (if cum column exists)."""
+    df = df.sort_values([group_col, time_col]).copy()
+
+    def first3_mean(s: pd.Series) -> float:
+        return s.head(3).mean()
+
+    first3 = (df.groupby(group_col)[target_col].apply(first3_mean).rename("first3_avg"))
+    peak = df.groupby(group_col)[target_col].max().rename("peak")
+
+    df = df.merge(first3, on=group_col).merge(peak, on=group_col)
+    df["rate_rel_3m"]   = df[target_col] / (df["first3_avg"] + EPS)
+    df["rate_rel_peak"] = df[target_col] / (df["peak"] + EPS)
+
+    if "cum_oil_bbl" in df.columns:
+        def cum_at_3m(s: pd.Series) -> float:
+            if len(s) >= 3:
+                return float(s.iloc[2])
+            return float(s.iloc[-1]) if len(s) else np.nan
+        first3_cum = df.groupby(group_col)["cum_oil_bbl"].transform(cum_at_3m)
+        df["cum_oil_rel"] = df["cum_oil_bbl"] / (first3_cum + EPS)
+    else:
+        df["cum_oil_rel"] = np.nan
+
+    return df
 
 def main() -> None:
     # sanity: ensure processed dir exists
@@ -134,12 +163,42 @@ def main() -> None:
     mean_value = merged['total_depth'].mean()
     merged["total_depth"] = merged["total_depth"].fillna(mean_value)
     
+    # ---------- Add relative features (for PAST covariates) ----------
+    merged = _add_relative_features(
+        df=merged, group_col='well_id', time_col='date', target_col=TARGET  # TARGET == "oil_rate_bpd"
+    )
+    
+    
+    # ---------- Add DCA features (for PAST covariates) ----------
+    # K_DCA = 24  or 12/18; must be <= typical warm length
+    rows = []
+    dca_curves = []
+
+    for wid, dfw in merged.groupby("well_id"):
+        try:
+            qi, Di, b = fit_arps_first_k_months(dfw, k=K_DCA, target_col="oil_rate_bpd", time_col="date")
+            dca_series = make_dca_curve(dfw, qi, Di, b, time_col="date").rename("dca_bpd")
+            dca_curves.append(
+                pd.DataFrame({"well_id": wid, "date": dca_series.index, "dca_bpd": dca_series.values})
+            )
+            rows.append({"well_id": wid, "qi": qi, "Di": Di, "b": b})
+        except Exception:
+            # If fit fails, leave NaNs; model can rely on other covariates
+            pass
+
+    dca_df = pd.concat(dca_curves, ignore_index=True) if dca_curves else pd.DataFrame(columns=["well_id","date","dca_bpd"])
+    pars_df = pd.DataFrame(rows) if rows else pd.DataFrame(columns=["well_id","qi","Di","b"])
+
+    # merge back
+    merged_dca = merged.merge(dca_df, on=["well_id","date"], how="left").merge(pars_df, on="well_id", how="left")
+
+    
     # -------------------
     # Filter wells with enough history (train set)
     # -------------------
     need_len = INPUT_CHUNK + FORECAST_H * N_WINDOWS + BUFFER
-    n_per_well = merged.groupby('well_id')['date'].transform("size")
-    merged_train = merged[n_per_well >= need_len].copy()
+    n_per_well = merged_dca.groupby('well_id')['date'].transform("size")
+    merged_train = merged_dca[n_per_well >= need_len].copy()
     
     # -------------------
     # Filter wells with erratic history
@@ -232,7 +291,8 @@ def main() -> None:
     merged_train = merged_train[~ ((merged_train['well_id']==160925) & (merged_train['date']>'2024-10-01'))]
     merged_train = merged_train[~ ((merged_train['well_id']==160930) & (merged_train['date']>'2024-11-01'))]
     merged_train = merged_train[~ ((merged_train['well_id']==161374) & (merged_train['date']>'2024-10-01'))]
-    
+
+
     # Apply reindexing per well_id
     df_train_reindexed = merged_train.groupby('well_id').apply(lambda x: reindex_group(x, 'date', freq='MS')).reset_index(drop=True)
 
@@ -283,8 +343,8 @@ def main() -> None:
     # -------------------
     
     need_len = INPUT_CHUNK + FORECAST_H * N_WINDOWS + BUFFER
-    n_per_well = merged.groupby('well_id')['date'].transform("size")
-    merged_test = merged[(n_per_well >= need_len-BUFFER) & (n_per_well < need_len)].copy()
+    n_per_well = merged_dca.groupby('well_id')['date'].transform("size")
+    merged_test = merged_dca[(n_per_well >= need_len-BUFFER) & (n_per_well < need_len)].copy()
     
     bad_wells = [157567,160943,]
 

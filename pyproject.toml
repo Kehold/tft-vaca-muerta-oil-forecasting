@@ -28,7 +28,7 @@ pmdarima = "^2.0.4"
 vm-prepare = "vm_tft.cli.prepare_data:main"
 vm-fit-cv  = "vm_tft.cli.fit_cv:main"
 vm-search  = "vm_tft.cli.search_fit:main"
-vm-test    = "vm_tft.cli.test_predict_:main"
+vm-test    = "vm_tft.cli.test_predict:main"
 vm-explain = "vm_tft.cli.explain:main"
 
 [build-system]
