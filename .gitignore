@@ -43,6 +43,9 @@ data/artifacts/runs/
 # Temporary files
 tmp/
 
+# Backup files
+.git-backup/
+
 # Large files (optional, adjust as needed)
 # *.pt
 # *.ckpt
