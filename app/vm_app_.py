@@ -1,3 +1,12 @@
+# --- make local src/ importable on Streamlit Cloud ---
+import sys
+from pathlib import Path
+ROOT = Path(__file__).resolve().parents[1]  # repo root (app/ is one level below)
+SRC  = ROOT / "src"
+if str(SRC) not in sys.path:
+    sys.path.insert(0, str(SRC))
+# -----------------------------------------------------
+
 from __future__ import annotations
 import plotly.io as pio
 import json
