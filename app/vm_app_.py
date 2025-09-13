@@ -707,7 +707,7 @@ and model explainability.
 
     with right:
         # st.image("data/images/tft_paper.png", use_container_width=True, caption="TFT forecasting architecture")
-        show_image_safe("data/images/tft_paper.png", "TFT forecasting architecture")
+        show_image_safe("data/images/TFT_paper.png", "TFT forecasting architecture")
 
 
 # ---- 1) Data Explorer ----
