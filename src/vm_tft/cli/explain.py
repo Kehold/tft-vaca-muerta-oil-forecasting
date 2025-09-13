@@ -362,7 +362,7 @@ def export_pseudo_global_vi(
 
 def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(description="TFT Explainability (local + pseudo-global)")
-    parser.add_argument("--model-path", type=str, default=str(artifact_path("runs") / "search/2025-09-11_03-48-54__baseline_again/model_best.pt"))
+    parser.add_argument("--model-path", type=str, default=str(artifact_path("runs") / "search_bo/2025-09-12_10-02-41__bo_baseline_scaler/model_best.pt"))
     parser.add_argument("--eval-set", type=str, choices=["test", "train"], default="test",
                         help="use TEST (default) or TRAIN for foreground explanations")
     parser.add_argument("--local-wells", type=str, default="0,5,18",

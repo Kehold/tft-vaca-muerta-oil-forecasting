@@ -368,7 +368,7 @@ def _plot_prediction_future(res, title: str) -> plt.Figure:
 
 def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(description="Warm-start evaluation on TEST set (Case B) and Future Forecasts (Case C)")
-    parser.add_argument("--model-path", type=str, default=str(artifact_path("runs") / "search/2025-09-11_03-48-54__baseline_again/model_best.pt"))
+    parser.add_argument("--model-path", type=str, default=str(artifact_path("runs") / "search_bo/2025-09-12_10-02-41__bo_baseline_scaler/model_best.pt"))
     parser.add_argument("--warm-months", type=int, default=36, help="months of initial history provided")
 
     # Which cases to run (A removed)

@@ -23,11 +23,15 @@ torchvision = { version = "^0.23.0", source = "pytorch-gpu-src" }
 streamlit = "^1.49.1"
 plotly = "^6.3.0"
 pmdarima = "^2.0.4"
+optuna = "^4.5.0"
+scikit-optimize = "^0.10.2"
+tqdm = "^4.67.1"
 
 [tool.poetry.scripts]
 vm-prepare = "vm_tft.cli.prepare_data:main"
 vm-fit-cv  = "vm_tft.cli.fit_cv:main"
 vm-search  = "vm_tft.cli.search_fit:main"
+vm-search-bo  = "vm_tft.cli.search_fit_bo:main"
 vm-test    = "vm_tft.cli.test_predict:main"
 vm-explain = "vm_tft.cli.explain:main"
 

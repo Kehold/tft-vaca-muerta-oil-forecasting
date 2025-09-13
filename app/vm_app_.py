@@ -413,20 +413,20 @@ def list_artifacts() -> dict:
     base = Path(ARTIFACTS)
     return {
         "models": {
-            "best_from_search": base / "models" / "model_best.pt", # has MinMax scaler
+            "best_from_search": base / "models" / "model_best_bo_baseline_scaler.pt", # has MinMax scaler
             # "best_manual": base / "models" / "model_log_baseline_repeat.pt", # has MinMax scaler
         },
         "cv": {
-            "overall_metrics": base / "metrics" / "metrics_overall.json",
-            "per_series_window": base / "metrics" / "metrics_per_series_window.csv",
+            "overall_metrics": base / "metrics" / "metrics_overall_baseline_again.json",
+            "per_series_window": base / "metrics" / "metrics_per_series_window_baseline_again.csv",
         },
         "search": {
-            "trials_csv": base / "metrics" / "search_trials.csv",
-            "best_config": base / "metrics" / "search_best.json",
+            "trials_csv": base / "metrics" / "search_trials_bo_baseline_scaler.csv",
+            "best_config": base / "metrics" / "search_best_bo_baseline_scaler.json",
         },
         "test": {
             # Keep B (has metrics), add C (no metrics by design)
-            "caseB_metrics": base / "predictions" / "caseB_overall_mean.json",
+            "caseB_metrics": base / "predictions" / "caseB_overall_mean_bo_baseline.json",
             "predictions_dir": base / "predictions" / "plots",
         },
         "explain": {
