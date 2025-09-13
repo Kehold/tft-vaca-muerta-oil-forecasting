@@ -31,8 +31,8 @@ from statsmodels.tsa.holtwinters import ExponentialSmoothing
 
 # Darts objects are optional – only needed if you later add “live” model actions
 try:
-    from darts.models import TFTModel  # noqa: F401
-    from darts.timeseries import TimeSeries  # noqa: F401
+    from darts.models import TFTModel  
+    from darts.timeseries import TimeSeries  
 except Exception:
     TFTModel = None
     TimeSeries = None
@@ -42,7 +42,23 @@ from vm_tft.cfg import (
     ALL_FILE, TEST_FILE, ARTIFACTS,
     TIME_COL, GROUP_COL, TARGET, FREQ,
 )
-from vm_tft.io_utils import ensure_dir  # noqa: F401
+from vm_tft.io_utils import ensure_dir  
+
+from PIL import Image, UnidentifiedImageError
+
+def show_image_safe(rel_path: str, caption: str = "") -> None:
+    # Build absolute, case-sensitive path from repo root
+    img_path = ROOT / rel_path  # ROOT comes from your earlier snippet
+    if not img_path.exists():
+        st.warning(f"Image not found: {img_path}. "
+                   f"Check filename & case (Linux is case-sensitive).")
+        return
+    try:
+        img = Image.open(img_path)
+    except (UnidentifiedImageError, OSError) as e:
+        st.error(f"Could not open image {img_path.name}: {e}")
+        return
+    st.image(img, use_container_width=True, caption=caption)
 
 # =========================
 # Page Settings
@@ -690,7 +706,8 @@ and model explainability.
         )
 
     with right:
-        st.image("data/images/tft_paper.png", use_container_width=True, caption="TFT forecasting architecture")
+        # st.image("data/images/tft_paper.png", use_container_width=True, caption="TFT forecasting architecture")
+        show_image_safe("data/images/tft_paper.png", "TFT forecasting architecture")
 
 
 # ---- 1) Data Explorer ----
