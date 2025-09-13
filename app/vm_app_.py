@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 # --- make local src/ importable on Streamlit Cloud ---
 import sys
 from pathlib import Path
@@ -7,7 +9,6 @@ if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 # -----------------------------------------------------
 
-from __future__ import annotations
 import plotly.io as pio
 import json
 from pathlib import Path
