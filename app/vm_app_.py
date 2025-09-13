@@ -464,7 +464,7 @@ def metric_card(label: str, value: float | str, help_text: str = ""):
 def plot_series_px(df: pd.DataFrame, y: str, title: str):
     fig = px.line(df, x=TIME_COL, y=y, title=title)
     fig.update_layout(margin=dict(l=0, r=0, t=50, b=0))
-    st.plotly_chart(fig, width='stretch')
+    st.plotly_chart(fig, use_container_width=True)
     
 def _series_index_for_well(df: pd.DataFrame, well_id: int) -> Optional[int]:
     """Map well_id -> series index using the same ordering used in test_predict."""
@@ -606,7 +606,7 @@ def plot_forecast_band_p10_p50_p90(
         ))
 
     fig.update_layout(title=title, margin=dict(l=0, r=0, t=50, b=0))
-    st.plotly_chart(fig, width='stretch')
+    st.plotly_chart(fig, use_container_width=True)
 
 # =========================
 # Sidebar Navigation
@@ -690,7 +690,7 @@ and model explainability.
         )
 
     with right:
-        st.image("data/images/tft paper.png", width='stretch', caption="TFT forecasting architecture")
+        st.image("data/images/tft paper.png", use_container_width=True, caption="TFT forecasting architecture")
 
 
 # ---- 1) Data Explorer ----
@@ -748,7 +748,7 @@ if section == "Data Explorer":
                 df_w, TARGET, f"Well {well_id} – {TARGET}",
                 roll_win=roll_win, show_mean=show_mean, show_median=show_median
             )
-            st.plotly_chart(fig_ts, width='stretch', config={"displayModeBar": False})
+            st.plotly_chart(fig_ts, use_container_width=True, config={"displayModeBar": False})
 
     # ACF (+ optional PACF)
     with right:  # whatever column you use beside the time-series
@@ -776,7 +776,7 @@ if section == "Data Explorer":
                 xaxis_title="Lag",
                 yaxis_title="Correlation",
             )
-            st.plotly_chart(fig, width='stretch')
+            st.plotly_chart(fig, use_container_width=True)
         else:
             st.info("Not enough data points to compute correlations for this well.")
 
@@ -798,7 +798,7 @@ if section == "Data Explorer":
             st.info("Not enough data for STL (need at least ~2×period).")
         else:
             fig_stl = plot_stl_small_multiples(stl_res, title_prefix=f"STL (Well {well_id}, period={stl_period})")
-            st.plotly_chart(fig_stl, width='stretch', config={"displayModeBar": False})
+            st.plotly_chart(fig_stl, use_container_width=True, config={"displayModeBar": False})
 
     # Raw table (filtered to the selected well)
     st.subheader("Raw data")
@@ -809,7 +809,7 @@ if section == "Data Explorer":
     else:
         st.dataframe(
             df_w.sort_values(TIME_COL).head(200),
-            width='stretch'
+            use_container_width=True
         )
         
     st.subheader("Baseline Forecast (Holt-Winters)")
@@ -880,14 +880,14 @@ elif section == "Model CV":
                 title=f"{selected_label} distribution",
             )
             fig.update_layout(margin=dict(l=0, r=0, t=50, b=0))
-            st.plotly_chart(fig, width='stretch')
+            st.plotly_chart(fig, use_container_width=True)
 
     # Full table below
     st.subheader("Per-series / window metrics")
     if per_series.empty:
         st.info("No per-series/window CSV found.")
     else:
-        st.dataframe(per_series, width='stretch', height=420)
+        st.dataframe(per_series, use_container_width=True, height=420)
 
 # ---- 3) Randomized Search ----
 elif section == "Randomized Search":
@@ -927,7 +927,7 @@ elif section == "Randomized Search":
         st.info("No trials summary yet. Run `vm-search-fit`.")
     else:
         st.subheader("Trials summary")
-        st.dataframe(trials, width='stretch', height=420)
+        st.dataframe(trials, use_container_width=True, height=420)
 
         if x_hp is not None and color_hp is not None:
             fig = px.scatter(
@@ -945,7 +945,7 @@ elif section == "Randomized Search":
                 margin=dict(l=0, r=0, t=60, b=0),
                 legend=dict(itemsizing="constant")
             )
-            st.plotly_chart(fig, width='stretch')
+            st.plotly_chart(fig, use_container_width=True)
 
     # ---- Best configuration ----
     st.subheader("Best configuration")
@@ -1004,7 +1004,7 @@ elif section == "Test Predictions":
     for case_tag, col in [("caseB", colB), ("caseC", colC)]:
         png_path = _find_prediction_image(Path(preds_dir or ""), well_id, series_idx, case_tag)
         if png_path is not None:
-            col.image(str(png_path), caption=f"{case_tag.upper()} – Well {well_id}", width='stretch')
+            col.image(str(png_path), caption=f"{case_tag.upper()} – Well {well_id}", use_container_width=True)
             shown_any = True
 
     # If no PNGs found, fall back to CSV-driven Matplotlib replica (full width)
@@ -1019,8 +1019,8 @@ elif section == "Test Predictions":
                 y_col=TARGET,
                 title=f"Well {well_id} – Forecast",
             )
-            st.pyplot(fig, width='stretch')
-            st.dataframe(df_pred.tail(100), width='stretch')
+            st.pyplot(fig, use_container_width=True)
+            st.dataframe(df_pred.tail(100), use_container_width=True)
         else:
             st.info(
                 "No Darts PNG or CSV found for this well. "
@@ -1198,7 +1198,7 @@ elif section == "Test Predictions":
                     )
 
                     # Plot in RIGHT column with the same height (350px)
-                    c2.plotly_chart(fig_cum, width='stretch', height=350)
+                    c2.plotly_chart(fig_cum, use_container_width=True, height=350)
 
                     # Optional: incremental P50 over forecast window (caption on right)
                     # start_date = df_pred[TIME_COL].min()
@@ -1241,7 +1241,7 @@ elif section == "Explainability":
             # show image by well_id (requires `--save-by well` in CLI)
             img_path = local_dir / f"local_variable_importance_well_{well_id}.png"
             if img_path.exists():
-                st.image(str(img_path), caption=f"Local VI – Well {well_id}", width='stretch')
+                st.image(str(img_path), caption=f"Local VI – Well {well_id}", use_container_width=True)
             else:
                 st.caption("No local VI image for this well yet. Run `vm-explain --save-by well`.")
 
@@ -1250,9 +1250,9 @@ elif section == "Explainability":
             if csv_path.exists():
                 df_local = pd.read_csv(csv_path)
                 if "well_id" in df_local.columns:
-                    st.dataframe(df_local.query("well_id == @well_id"), width='stretch', height=360)
+                    st.dataframe(df_local.query("well_id == @well_id"), use_container_width=True, height=360)
                 else:
-                    st.dataframe(df_local, width='stretch', height=360)
+                    st.dataframe(df_local, use_container_width=True, height=360)
 
     with tabs[1]:
         st.subheader("Temporal Attention")
@@ -1264,10 +1264,10 @@ elif section == "Explainability":
 
             shown_any = False
             if attn_all.exists():
-                st.image(str(attn_all), caption=f"Attention (all) – Well {well_id}", width='stretch')
+                st.image(str(attn_all), caption=f"Attention (all) – Well {well_id}", use_container_width=True)
                 shown_any = True
             if attn_heat.exists():
-                st.image(str(attn_heat), caption=f"Attention (heatmap) – Well {well_id}", width='stretch')
+                st.image(str(attn_heat), caption=f"Attention (heatmap) – Well {well_id}", use_container_width=True)
                 shown_any = True
 
             if not shown_any:
@@ -1277,7 +1277,7 @@ elif section == "Explainability":
         st.subheader("Pseudo-global Variable Importance")
         if Path(global_csv).exists():
             df_global = pd.read_csv(global_csv)
-            st.dataframe(df_global, width='stretch', height=420)
+            st.dataframe(df_global, use_container_width=True, height=420)
 
             block = st.selectbox("Block", sorted(df_global["block"].unique().tolist()))
             df_b = df_global[df_global["block"] == block].nlargest(20, "importance_mean")
@@ -1300,7 +1300,7 @@ elif section == "Explainability":
                 ), 
                 height = 700
             )
-            st.plotly_chart(fig, width='stretch')
+            st.plotly_chart(fig, use_container_width=True)
         else:
             st.info("No pseudo-global VI CSV yet. Run `vm-explain`.")
 
