@@ -47,18 +47,17 @@ from vm_tft.io_utils import ensure_dir
 from PIL import Image, UnidentifiedImageError
 
 def show_image_safe(rel_path: str, caption: str = "") -> None:
-    # Build absolute, case-sensitive path from repo root
-    img_path = ROOT / rel_path  # ROOT comes from your earlier snippet
+    img_path = ROOT / rel_path
     if not img_path.exists():
-        st.warning(f"Image not found: {img_path}. "
-                   f"Check filename & case (Linux is case-sensitive).")
+        st.warning(f"Image not found: {img_path} (check name & case).")
         return
     try:
         img = Image.open(img_path)
     except (UnidentifiedImageError, OSError) as e:
         st.error(f"Could not open image {img_path.name}: {e}")
         return
-    st.image(img, use_container_width=True, caption=caption)
+    # ✅ For images, use use_column_width
+    st.image(img, use_column_width=True, caption=caption)
 
 # =========================
 # Page Settings
