@@ -1326,5 +1326,5 @@ elif section == "Explainability":
 # ========== Footer ==========
 st.markdown("---")
 st.caption(
-    "© Alexis Ortega • Vaca Muerta TFT • Streamlit dashboard • https://github.com/alexort74/ttf-vaca-muerta-oil-forecasting"
+    "© Alexis Ortega • Vaca Muerta TFT • Streamlit dashboard • https://github.com/alexort74/tft-vm-oil-forecasting"
 )
