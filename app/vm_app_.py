@@ -1257,7 +1257,8 @@ elif section == "Explainability":
             # show image by well_id (requires `--save-by well` in CLI)
             img_path = local_dir / f"local_variable_importance_well_{well_id}.png"
             if img_path.exists():
-                st.image(str(img_path), caption=f"Local VI – Well {well_id}", use_container_width=True)
+                # st.image(str(img_path), caption=f"Local VI – Well {well_id}", use_container_width=True)
+                show_image_safe(img_path, "TFT forecasting architecture")
             else:
                 st.caption("No local VI image for this well yet. Run `vm-explain --save-by well`.")
 
