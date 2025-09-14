@@ -1258,7 +1258,7 @@ elif section == "Explainability":
             img_path = local_dir / f"local_variable_importance_well_{well_id}.png"
             if img_path.exists():
                 # st.image(str(img_path), caption=f"Local VI – Well {well_id}", use_container_width=True)
-                show_image_safe(img_path, "TFT forecasting architecture")
+                show_image_safe(img_path, f"Local VI – Well {well_id}")
             else:
                 st.caption("No local VI image for this well yet. Run `vm-explain --save-by well`.")
 
@@ -1281,10 +1281,12 @@ elif section == "Explainability":
 
             shown_any = False
             if attn_all.exists():
-                st.image(str(attn_all), caption=f"Attention (all) – Well {well_id}", use_container_width=True)
+                # st.image(str(attn_all), caption=f"Attention (all) – Well {well_id}", use_container_width=True)
+                show_image_safe(str(attn_all), f"Attention (all) – Well {well_id}")
                 shown_any = True
             if attn_heat.exists():
-                st.image(str(attn_heat), caption=f"Attention (heatmap) – Well {well_id}", use_container_width=True)
+                # st.image(str(attn_heat), caption=f"Attention (heatmap) – Well {well_id}", use_container_width=True)
+                show_image_safe(str(attn_heat), f"Attention (heatmap) – Well {well_id}")
                 shown_any = True
 
             if not shown_any:
