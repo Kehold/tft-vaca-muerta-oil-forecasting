@@ -1232,9 +1232,6 @@ elif section == "Test Predictions":
         "(`caseB_well_<id>.png`, `caseC_well_<id>.png`)."
     )
 
-
-
-
 # ---- 5) Explainability ----
 elif section == "Explainability":
     st.header("🪄 Explainability")
