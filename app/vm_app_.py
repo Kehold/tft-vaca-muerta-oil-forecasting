@@ -1020,7 +1020,7 @@ elif section == "Test Predictions":
     for case_tag, col in [("caseB", colB), ("caseC", colC)]:
         png_path = _find_prediction_image(Path(preds_dir or ""), well_id, series_idx, case_tag)
         if png_path is not None:
-            col.image(str(png_path), caption=f"{case_tag.upper()} – Well {well_id}", use_container_width=True)
+            col.image(str(png_path), caption=f"{case_tag.upper()} – Well {well_id}", use_column_width=True,)
             shown_any = True
 
     # If no PNGs found, fall back to CSV-driven Matplotlib replica (full width)
