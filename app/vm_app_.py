@@ -450,46 +450,58 @@ def get_well_ids(df: pd.DataFrame) -> List[int]:
 
 def select_well_by_name(df: pd.DataFrame, *, name_col: str = "well_name") -> Optional[int]:
     """
-    Shows a selectbox with well names; returns the corresponding well_id (GROUP_COL).
-    If `well_name` doesn't exist, falls back to id selection.
+    Sidebar selectbox with well names -> returns the matching well_id (GROUP_COL).
+    Falls back to an ID selector if name_col is missing. Robust to empty data.
     """
     if df.empty:
+        st.sidebar.info("No rows in the active dataset.")
         return None
 
     id_col = GROUP_COL if GROUP_COL in df.columns else "well_id"
 
+    # ---- Fallback: select by ID if names are unavailable
     if name_col not in df.columns:
-        # Fallback: behave like before (ids)
-        ids = sorted(df[id_col].dropna().unique().tolist())
-        return st.sidebar.selectbox("Well (by id)", ids, index=0 if ids else None)
+        ids = sorted(pd.unique(df[id_col].dropna()))
+        if not len(ids):
+            st.sidebar.info("No wells found.")
+            return None
+        chosen = st.sidebar.selectbox("Well (by id)", ids, index=0)
+        st.session_state["selected_well_id"] = int(chosen)
+        return int(chosen)
 
-    # Build unique labels; if a name maps to multiple ids, append "(id ###)"
+    # ---- Build unique label list (append id when names are duplicated)
     dfu = (
         df[[id_col, name_col]]
         .dropna(subset=[id_col])
         .drop_duplicates()
         .sort_values([name_col, id_col])
+        .reset_index(drop=True)   # ensures integer positional index
     )
-    counts = dfu[name_col].value_counts()
-    dup_names = set(counts[counts > 1].index)
+    if dfu.empty:
+        st.sidebar.info("No wells found.")
+        return None
 
-    def mk_label(row):
-        nm = str(row[name_col])
-        return f"{nm} (id {int(row[id_col])})" if nm in dup_names else nm
-
-    dfu["label"] = dfu.apply(mk_label, axis=1)
+    dup_names = set(dfu[name_col].value_counts().loc[lambda s: s > 1].index)
+    dfu["label"] = np.where(
+        dfu[name_col].isin(dup_names),
+        dfu[name_col].astype(str) + " (id " + dfu[id_col].astype(int).astype(str) + ")",
+        dfu[name_col].astype(str),
+    )
 
     labels = dfu["label"].tolist()
+
+    # Preserve previous selection when possible
     default_idx = 0
-    # Try to preserve previous selection if available
     prev_id = st.session_state.get("selected_well_id")
     if prev_id in set(dfu[id_col].tolist()):
-        default_idx = dfu.index[dfu[id_col] == prev_id][0] - dfu.index[0]
+        default_idx = int(dfu.index[dfu[id_col] == prev_id][0])
 
-    sel_label = st.sidebar.selectbox("Well", labels, index=default_idx if labels else None)
-    # Map label → id
-    label_to_id = dict(zip(dfu["label"], dfu[id_col]))
-    sel_id = int(label_to_id[sel_label]) if sel_label in label_to_id else None
+    # Clamp index to a valid range
+    default_idx = max(0, min(default_idx, len(labels) - 1))
+
+    sel_label = st.sidebar.selectbox("Well", labels, index=default_idx)
+    sel_id = int(dfu.loc[dfu["label"] == sel_label, id_col].iloc[0])
+
     st.session_state["selected_well_id"] = sel_id
     return sel_id
 
