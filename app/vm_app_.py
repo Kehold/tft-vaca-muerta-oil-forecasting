@@ -1412,12 +1412,12 @@ elif section == "Test Predictions":
                 else:
                     c2.info("Not enough prediction data to build cumulative plot.")
 
-    st.caption(
-        "This page shows Darts-rendered PNGs when available "
-        "(`caseB_series_###.png`, `caseC_series_###.png`). "
-        "Optionally, you can also save by well id "
-        "(`caseB_well_<id>.png`, `caseC_well_<id>.png`)."
-    )
+    # st.caption(
+    #     "This page shows Darts-rendered PNGs when available "
+    #     "(`caseB_series_###.png`, `caseC_series_###.png`). "
+    #     "Optionally, you can also save by well id "
+    #     "(`caseB_well_<id>.png`, `caseC_well_<id>.png`)."
+    # )
 
 # ---- 6) Explainability ----
 elif section == "Explainability":
