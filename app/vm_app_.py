@@ -121,29 +121,6 @@ def read_metrics_csv(path: Path) -> pd.DataFrame:
         return pd.DataFrame()
     return pd.read_csv(path)
 
-# @st.cache_data(show_spinner=False)
-# def compute_acf_for_well(df: pd.DataFrame, well_id: int, y_col: str, max_lags: int, do_diff: bool):
-#     """Returns lags, acf_values, and CI half-width (±1.96/sqrt(N))."""
-#     col = GROUP_COL if GROUP_COL in df.columns else "well_id"
-#     s = (
-#         df.loc[df[col] == well_id, [TIME_COL, y_col]]
-#           .dropna()
-#           .sort_values(TIME_COL)[y_col]
-#           .to_numpy(dtype=float)
-#     )
-#     if s.size == 0:
-#         return np.arange(0), np.array([]), 0.0
-
-#     if do_diff and s.size > 1:
-#         s = np.diff(s)
-
-#     # statsmodels ACF (we’ll use the simple normal CI)
-#     nlags = int(max(1, min(max_lags, max(1, s.size - 1))))
-#     acf_vals = sm_acf(s, nlags=nlags, fft=True)
-#     ci_half = 1.96 / np.sqrt(s.size)
-#     lags = np.arange(len(acf_vals))
-#     return lags, acf_vals, float(ci_half)
-
 @st.cache_data(show_spinner=False)
 def compute_acf_for_well(df, well_id, target_col, nlags=36, difference=False):
     s = (
@@ -465,12 +442,57 @@ def list_artifacts() -> dict:
         },
     }
     
-
 def get_well_ids(df: pd.DataFrame) -> List[int]:
     if df.empty:
         return []
     col = GROUP_COL if GROUP_COL in df.columns else "well_id"
     return sorted(df[col].dropna().unique().tolist())
+
+def select_well_by_name(df: pd.DataFrame, *, name_col: str = "well_name") -> Optional[int]:
+    """
+    Shows a selectbox with well names; returns the corresponding well_id (GROUP_COL).
+    If `well_name` doesn't exist, falls back to id selection.
+    """
+    if df.empty:
+        return None
+
+    id_col = GROUP_COL if GROUP_COL in df.columns else "well_id"
+
+    if name_col not in df.columns:
+        # Fallback: behave like before (ids)
+        ids = sorted(df[id_col].dropna().unique().tolist())
+        return st.sidebar.selectbox("Well (by id)", ids, index=0 if ids else None)
+
+    # Build unique labels; if a name maps to multiple ids, append "(id ###)"
+    dfu = (
+        df[[id_col, name_col]]
+        .dropna(subset=[id_col])
+        .drop_duplicates()
+        .sort_values([name_col, id_col])
+    )
+    counts = dfu[name_col].value_counts()
+    dup_names = set(counts[counts > 1].index)
+
+    def mk_label(row):
+        nm = str(row[name_col])
+        return f"{nm} (id {int(row[id_col])})" if nm in dup_names else nm
+
+    dfu["label"] = dfu.apply(mk_label, axis=1)
+
+    labels = dfu["label"].tolist()
+    default_idx = 0
+    # Try to preserve previous selection if available
+    prev_id = st.session_state.get("selected_well_id")
+    if prev_id in set(dfu[id_col].tolist()):
+        default_idx = dfu.index[dfu[id_col] == prev_id][0] - dfu.index[0]
+
+    sel_label = st.sidebar.selectbox("Well", labels, index=default_idx if labels else None)
+    # Map label → id
+    label_to_id = dict(zip(dfu["label"], dfu[id_col]))
+    sel_id = int(label_to_id[sel_label]) if sel_label in label_to_id else None
+    st.session_state["selected_well_id"] = sel_id
+    return sel_id
+
 
 def filter_df_by_well(df: pd.DataFrame, well_id: int) -> pd.DataFrame:
     col = GROUP_COL if GROUP_COL in df.columns else "well_id"
@@ -676,8 +698,8 @@ st.sidebar.subheader("Global controls")
 default_set = st.sidebar.selectbox("Active dataset", ["Test", "Train/All"], index=0)
 active_df = df_test if default_set == "Test" else df_all
 
-well_ids = get_well_ids(active_df)
-well_id = st.sidebar.selectbox("Well", well_ids, index=0 if well_ids else None)
+# ✅ Select by well_name, keep using well_id everywhere else
+well_id = select_well_by_name(active_df)
 
 st.sidebar.markdown("---")
 
