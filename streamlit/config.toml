@@ -1,0 +1,7 @@
+[theme]
+base                = "light"         # also try "dark"
+primaryColor        = "#2E86AB"       # your brand blue
+backgroundColor     = "#ffffff"
+secondaryBackgroundColor = "#f7f8fb"  # soft card background
+textColor           = "#101828"
+font                = "Inter"
