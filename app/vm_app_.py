@@ -458,8 +458,13 @@ def list_artifacts() -> dict:
             "local_dir": base / "explain" / "local",
             "attention_dir": base / "explain" / "attention",
             "global_csv": base / "explain" / "global" / "global_variable_importance_pseudo.csv",
-        }
+        },
+        "baselines": {
+            "overall_json": base / "metrics" / "baselines_overall.json",
+            "per_series_csv": base / "metrics" / "baselines_per_series.csv",
+        },
     }
+    
 
 def get_well_ids(df: pd.DataFrame) -> List[int]:
     if df.empty:
@@ -623,13 +628,35 @@ def plot_forecast_band_p10_p50_p90(
     fig.update_layout(title=title, margin=dict(l=0, r=0, t=50, b=0))
     st.plotly_chart(fig, use_container_width=True)
 
+# ----- helpers for baselines -----
+@st.cache_data(show_spinner=False)
+def load_baseline_overall_means(path: Path) -> pd.DataFrame:
+    """
+    Reads baselines_overall.json (model -> {rmse_mean, rmse_median, ...})
+    and returns a tidy DataFrame with: model, rmse, mae, smape (means).
+    Falls back to medians if means are missing.
+    """
+    data = read_metrics_json(path) or {}
+    if not isinstance(data, dict) or not data:
+        return pd.DataFrame(columns=["model", "rmse", "mae", "smape"])
+
+    df = pd.DataFrame.from_dict(data, orient="index").reset_index().rename(columns={"index": "model"})
+    for m in ["rmse", "mae", "smape"]:
+        if f"{m}_mean" in df.columns:
+            df[m] = df[f"{m}_mean"]
+        elif f"{m}_median" in df.columns:
+            df[m] = df[f"{m}_median"]
+        else:
+            df[m] = np.nan
+    return df[["model", "rmse", "mae", "smape"]]
+
 # =========================
 # Sidebar Navigation
 # =========================
 st.sidebar.title("Vaca Muerta – TFT")
 section = st.sidebar.radio(
     "Navigate",
-    ["Home", "Data Explorer", "Model CV", "Randomized Search", "Test Predictions", "Explainability"],
+    ["Home", "Data Explorer", "Model CV", "Baselines", "Randomized Search", "Test Predictions", "Explainability"],
     index=0,
 )
 
@@ -708,7 +735,6 @@ and model explainability.
         # st.image("data/images/tft_paper.png", use_container_width=True, caption="TFT forecasting architecture")
         show_image_safe("data/images/tft_paper.png", "TFT forecasting architecture")
 
-
 # ---- 1) Data Explorer ----
 if section == "Data Explorer":
     st.header("📊 Data Explorer")
@@ -724,36 +750,48 @@ if section == "Data Explorer":
     sb = st.sidebar.expander("Data Explorer Controls", expanded=False)
 
     with sb:
-        # --- in the sidebar, under "Data Explorer Controls" ---
+        # --- Plot Selection ---
         st.markdown("**Plot Selection**")
         acf_kind = st.radio(
             "Correlation view", ("ACF", "PACF"),
-            index=0, help="Show either autocorrelation (ACF) or partial autocorrelation (PACF).")
+            index=0,
+            help="Show either autocorrelation (ACF) or partial autocorrelation (PACF).",
+        )
         max_lags = st.slider("Max lags", 6, 60, 36, step=6, key="acf_lags")
-        do_diff  = st.checkbox("Difference series (Δy) before ACF/PACF", value=False,  key="acf_diff", help="Compute correlations on first differences.")
-        
+        do_diff  = st.checkbox(
+            "Difference series (Δy) before ACF/PACF",
+            value=False,
+            key="acf_diff",
+            help="Compute correlations on first differences.",
+        )
+
         st.markdown("---")
+        # --- Overlays ---
         st.markdown("**Overlays**")
         roll_win = st.slider("Rolling window (months)", 3, 24, 6, 1, key="roll_win")
-        show_mean = st.checkbox("Show rolling mean", value=True, key="roll_mean")
+        show_mean   = st.checkbox("Show rolling mean",   value=True,  key="roll_mean")
         show_median = st.checkbox("Show rolling median", value=False, key="roll_median")
-
-        # st.markdown("---")
-        # st.markdown("**ACF / PACF**")
-        # max_lags = st.slider("Max lags", min_value=12, max_value=72, value=36, step=6, key="acf_lags")
-        # do_diff = st.checkbox("Difference series before ACF/PACF", value=False, key="acf_diff")
-        # show_pacf = st.checkbox("Show PACF", value=True, key="acf_show_pacf")
+        show_hw     = st.checkbox(
+            "Show Holt–Winters baseline (HW)",
+            value=False,
+            key="overlay_hw",
+            help="Quick trend-only baseline overlay; aggregate metrics live in the Baselines page.",
+        )
 
         st.markdown("---")
         st.markdown("**STL decomposition**")
-        stl_on = st.checkbox("Enable STL", value=False, key="stl_on",
-                             help="Requires enough data; ~2×period recommended.")
+        stl_on = st.checkbox(
+            "Enable STL",
+            value=False,
+            key="stl_on",
+            help="Requires enough data; ~2×period recommended.",
+        )
         stl_period = st.slider("STL period (months)", 6, 24, 12, 1, key="stl_period")
 
     # ---------- Main layout ----------
     left, right = st.columns([2, 1], gap="large")
 
-    # Main time series with overlays
+    # Main time series with overlays (+ optional HW overlay)
     with left:
         st.subheader("Production time series")
         df_w = filter_df_by_well(active_df, well_id)
@@ -764,17 +802,29 @@ if section == "Data Explorer":
                 df_w, TARGET, f"Well {well_id} – {TARGET}",
                 roll_win=roll_win, show_mean=show_mean, show_median=show_median
             )
-            st.plotly_chart(fig_ts, use_container_width=True, config={"displayModeBar": False})
 
-    # ACF (+ optional PACF)
-    with right:  # whatever column you use beside the time-series
-        # if acf_kind == "ACF":
-        #     lags, vals, ci = compute_acf_for_well(active_df, well_id, TARGET, max_lags, do_diff)
-        #     st.subheader("Autocorrelation (ACF)")
+            # 🔹 Optional HW overlay on the same figure (trend-only baseline)
+            if show_hw:
+                try:
+                    df_f = hw_forecast(df_w, TARGET, horizon=12)  # uses your helper
+                    fig_ts.add_trace(go.Scatter(
+                        x=df_f[TIME_COL],
+                        y=df_f["baseline_forecast"],
+                        mode="lines",
+                        name="HW baseline",
+                        line=dict(width=2, dash="dot")
+                    ))
+                except Exception as e:
+                    st.caption(f"HW overlay unavailable for this well: {e}")
+
+            st.plotly_chart(fig_ts, use_container_width=True, config={"displayModeBar": False})
+            st.caption("Note: HW overlay is a quick visual comparison. Full baseline metrics are in the **Baselines** page.")
+
+    # ACF / PACF panel
+    with right:
         if acf_kind == "PACF":
             lags, vals, ci = compute_pacf_for_well(active_df, well_id, TARGET, max_lags, do_diff)
             st.subheader("Partial Autocorrelation (PACF)")
-            # If we had to cap nlags, let the user know
             actual_nlags = max(0, len(vals) - 1)
             if actual_nlags and actual_nlags < max_lags:
                 st.caption(f"Note: PACF max lags capped to {actual_nlags} due to sample-size limits.")
@@ -803,8 +853,10 @@ if section == "Data Explorer":
             end = df_w[TIME_COL].max()
             mean_v = df_w[TARGET].mean()
             std_v = df_w[TARGET].std()
-            st.caption(f"**Summary** — n={n:,} • span: {start.date()} → {end.date()} • "
-                       f"mean={mean_v:,.1f} • std={std_v:,.1f}")
+            st.caption(
+                f"**Summary** — n={n:,} • span: {start.date()} → {end.date()} • "
+                f"mean={mean_v:,.1f} • std={std_v:,.1f}"
+            )
 
     # STL (full width) if enabled
     if stl_on:
@@ -818,24 +870,11 @@ if section == "Data Explorer":
 
     # Raw table (filtered to the selected well)
     st.subheader("Raw data")
-
     df_w = filter_df_by_well(active_df, well_id)
     if df_w.empty:
         st.info("Selected well has no rows.")
     else:
-        st.dataframe(
-            df_w.sort_values(TIME_COL).head(200),
-            use_container_width=True
-        )
-        
-    st.subheader("Baseline Forecast (Holt-Winters)")
-    if not df_w.empty:
-        df_f = hw_forecast(df_w, TARGET, horizon=12)
-        fig = go.Figure()
-        fig.add_trace(go.Scatter(x=df_f[TIME_COL], y=df_f["actual"], mode="lines+markers", name="Actual"))
-        fig.add_trace(go.Scatter(x=df_f[TIME_COL], y=df_f["baseline_forecast"], mode="lines+markers", name="HW baseline"))
-        fig.update_layout(title=f"Baseline forecast – Well {well_id}", xaxis_title="Date", yaxis_title=TARGET)
-        st.plotly_chart(fig, use_container_width=True)
+        st.dataframe(df_w.sort_values(TIME_COL).head(200), use_container_width=True)
 
 
 # ---- 2) Model CV ----
@@ -905,7 +944,121 @@ elif section == "Model CV":
     else:
         st.dataframe(per_series, use_container_width=True, height=420)
 
-# ---- 3) Randomized Search ----
+# ---- 3) Baselines ----
+elif section == "Baselines":
+    st.header("🪵 Baselines vs TFT")
+
+    # ---- paths
+    bl_overall_path = art["baselines"]["overall_json"]
+    bl_per_series_path = art["baselines"]["per_series_csv"]
+
+    # ---- overall (TFT + baselines)
+    tft_overall = read_metrics_json(art["cv"]["overall_metrics"]) or {}
+    df_tft = pd.DataFrame([{
+        "model": "TFT",
+        "rmse":  tft_overall.get("rmse",  np.nan),
+        "mae":   tft_overall.get("mae",   np.nan),
+        "smape": tft_overall.get("smape", np.nan),
+    }])
+
+    df_base = load_baseline_overall_means(bl_overall_path)
+    df_overall = pd.concat([df_tft, df_base], ignore_index=True)
+    if df_overall.empty:
+        st.info("No baseline summary found. Make sure `baselines_overall.json` exists.")
+    else:
+        df_overall[["rmse","mae","smape"]] = df_overall[["rmse","mae","smape"]].astype(float).round(3)
+        st.subheader("Overall metrics (lower is better)")
+        st.table(df_overall.set_index("model"))
+
+    st.markdown("---")
+
+    # ---- distributions across wells/windows (baselines per-window CSV)
+    st.subheader("Error distribution across wells/windows")
+    bl_per = read_metrics_csv(bl_per_series_path)
+    if bl_per.empty:
+        st.caption("No per-window baseline CSV found. Expected at: "
+                   f"`{bl_per_series_path}`.")
+    else:
+        metric = st.radio("Metric", ["rmse", "mae", "smape"], index=0, horizontal=True, key="bl_metric")
+        fig = px.histogram(
+            bl_per,
+            x=metric,
+            color="model",
+            barmode="overlay",
+            nbins=40,
+            title=f"{metric.upper()} distributions – baselines"
+        )
+        fig.update_layout(margin=dict(l=0, r=0, t=50, b=0))
+        st.plotly_chart(fig, use_container_width=True)
+
+    st.markdown("---")
+
+    # --- Per-well quick look (optional)
+    st.subheader("Per-well quick look (optional)")
+    st.caption("Runs only if Darts is available here.")
+    if TimeSeries is None:
+        st.info("Darts not available in this environment.")
+    else:
+        from darts.models.forecasting.exponential_smoothing import ExponentialSmoothing as ETS
+        from darts.models.forecasting.theta import Theta
+        try:
+            # ✅ Darts >= 0.30: use enums
+            from darts.utils.utils import ModelMode as MM, SeasonalityMode as SM
+        except Exception:
+            MM = SM = None  # very old Darts fallback
+
+        def make_hw_model():
+            """
+            Holt/ETS with additive trend and no seasonality.
+            Uses enums when available; never passes strings to `trend/seasonal`.
+            """
+            if MM is not None and SM is not None:
+                return ETS(trend=MM.ADDITIVE, seasonal=SM.NONE, seasonal_periods=None)
+            # older Darts accepted None/None (single exp smoothing / no seasonality)
+            return ETS(trend=None, seasonal=None, seasonal_periods=None)
+
+        def make_theta_model(ts_len: int, m: int = 12):
+            """
+            Theta with additive seasonality if we have enough data (>= 2*m),
+            else disable seasonality to avoid decomposition errors.
+            """
+            period = m if ts_len >= 2 * m else None
+            if SM is not None:
+                return Theta(season_mode=SM.ADDITIVE, seasonality_period=period)
+            return Theta(season_mode=None, seasonality_period=None)
+
+        # ---- data & plot
+        df_w = filter_df_by_well(active_df, well_id)
+        if df_w.empty:
+            st.info("Select a well with data.")
+        else:
+            ts = TimeSeries.from_dataframe(
+                df_w[[TIME_COL, TARGET]].dropna(),
+                time_col=TIME_COL,
+                value_cols=TARGET,
+                freq=FREQ,
+            )
+
+            h = st.slider("Horizon (months)", 6, 24, 12, 1, key="bl_demo_h")
+            m1 = make_hw_model()
+            m2 = make_theta_model(len(ts), m=12)
+
+            f1 = m1.fit(ts).predict(h)
+            f2 = m2.fit(ts).predict(h)
+
+            fig = go.Figure()
+            fig.add_trace(go.Scatter(x=df_w[TIME_COL], y=df_w[TARGET], mode="lines", name="Actual"))
+            fig.add_trace(go.Scatter(x=f1.time_index, y=f1.values().flatten(), mode="lines", name="HW / ETS"))
+            fig.add_trace(go.Scatter(x=f2.time_index, y=f2.values().flatten(), mode="lines", name="Theta"))
+            fig.update_layout(
+                title=f"Well {well_id} – short baseline forecast",
+                xaxis_title="Date", yaxis_title=TARGET,
+                margin=dict(l=0, r=0, t=50, b=0),
+            )
+            st.plotly_chart(fig, use_container_width=True)
+
+
+# ---- 4) Randomized Search ----
 elif section == "Randomized Search":
     st.header("🔍 Randomized Search")
 
@@ -995,7 +1148,7 @@ elif section == "Randomized Search":
     else:
         st.caption("No best_config.json yet or file not in expected format.")
 
-# ---- 4) Test Predictions ----
+# ---- 5) Test Predictions ----
 elif section == "Test Predictions":
     st.header("🧪 Test Predictions (Warm-start)")
 
@@ -1232,7 +1385,7 @@ elif section == "Test Predictions":
         "(`caseB_well_<id>.png`, `caseC_well_<id>.png`)."
     )
 
-# ---- 5) Explainability ----
+# ---- 6) Explainability ----
 elif section == "Explainability":
     st.header("🪄 Explainability")
 

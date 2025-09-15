@@ -4,7 +4,7 @@ from darts.models import TFTModel
 from darts.utils.likelihood_models import QuantileRegression
 from darts.utils.callbacks import TFMProgressBar
 
-DEFAULT_QUANTILES = [0.01,0.05,0.1,0.25,0.5,0.75,0.9,0.95,0.99]
+DEFAULT_QUANTILES = [0.1,0.5,0.9]
 
 def default_add_encoders(encode_year):
     return {
@@ -17,13 +17,13 @@ def default_add_encoders(encode_year):
 def build_tft(categorical_embedding_sizes: Dict[str,int],
               input_chunk_length: int, output_chunk_length: int,
               add_encoders: dict,
-              lr: float = 0.001,
-              hidden_size: int = 128,
-              hidden_continuous_size: int = 16,
-              lstm_layers: int = 3,
-              n_heads: int = 8,
+              lr: float = 0.000820009391166529,
+              hidden_size: int = 64,
+              hidden_continuous_size: int = 24,
+              lstm_layers: int = 2,
+              n_heads: int = 4,
               dropout: float = 0.05,
-              n_epochs: int = 30,
+              n_epochs: int = 50,
               batch_size: int = 128,
               quantiles: List[float] = DEFAULT_QUANTILES,
               seed: int = 42,

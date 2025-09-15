@@ -1,0 +1,26 @@
+{
+  "ExponentialSmoothing": {
+    "rmse_mean": 150.4015,
+    "rmse_median": 133.6416,
+    "mae_mean": 108.5294,
+    "mae_median": 95.7529,
+    "smape_mean": 56.5201,
+    "smape_median": 53.9915
+  },
+  "NaiveDrift": {
+    "rmse_mean": 424.9114,
+    "rmse_median": 237.1682,
+    "mae_mean": 240.1111,
+    "mae_median": 155.7169,
+    "smape_mean": 72.0879,
+    "smape_median": 68.833
+  },
+  "Theta": {
+    "rmse_mean": 140.0935,
+    "rmse_median": 119.2307,
+    "mae_mean": 111.0669,
+    "mae_median": 93.0748,
+    "smape_mean": 94.4976,
+    "smape_median": 92.5152
+  }
+}

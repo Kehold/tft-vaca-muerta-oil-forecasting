@@ -114,9 +114,9 @@ def _build_future_covariates(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def _suggest_params(trial: optuna.trial.Trial) -> dict:
-    heads = trial.suggest_categorical("num_attention_heads", [2, 4, 8])
+    heads = trial.suggest_categorical("num_attention_heads", [4, 8])
     hidden_size = trial.suggest_categorical(
-        "hidden_size", [h for h in [64, 96, 128, 160] if h % heads == 0]
+        "hidden_size", [h for h in [64, 96, 128] if h % heads == 0]
     )
     return {
         "input_chunk_length":     INPUT_CHUNK,
@@ -125,10 +125,10 @@ def _suggest_params(trial: optuna.trial.Trial) -> dict:
         "num_attention_heads":    int(heads),
         "lstm_layers":            trial.suggest_int("lstm_layers", 1, 3),
         "hidden_continuous_size": trial.suggest_categorical("hidden_continuous_size", [16, 24, 32]),
-        "dropout":                trial.suggest_float("dropout", 0.05, 0.30, step=0.05),
+        "dropout":                trial.suggest_float("dropout", 0.05, 0.25, step=0.05),
         "batch_size":             trial.suggest_categorical("batch_size", [64, 128]),
-        "n_epochs":               trial.suggest_int("n_epochs", 20, 50, step=10),
-        "lr":                     trial.suggest_float("lr", 1e-4, 3e-3, log=True),
+        "n_epochs":               trial.suggest_int("n_epochs", 30, 50, step=10),
+        "lr":                     trial.suggest_float("lr", 5e-4, 3e-3, log=True),
         "weight_decay":           trial.suggest_float("weight_decay", 1e-6, 1e-2, log=True),
     }
 

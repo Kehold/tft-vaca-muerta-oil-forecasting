@@ -32,7 +32,7 @@ STATIC_REALS = ["campaign", "horizontal_length","total_depth",
                 ]
 
 PAST_REALS   = ["gas_rate_mscfd", "water_rate_bpd",
-                # "rate_rel_3m", "rate_rel_peak", "cum_oil_rel", 
+                "rate_rel_3m", "rate_rel_peak", "cum_oil_rel", 
                 # "dca_bpd" # new variables
                 ]   
 FUTURE_REALS = ["well_age", 
