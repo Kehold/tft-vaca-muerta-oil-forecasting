@@ -1193,7 +1193,7 @@ elif section == "Test Predictions":
     # ---------------- Sidebar note ----------------
     st.sidebar.caption("This page shows Case B metrics and a Case C (5-year) cumulative plot.")
 
-    st.subheader("Per-well visualization (Darts PNGs preferred)")
+    st.subheader("Per-well visualization (Darts)")
     if active_df.empty or well_id is None:
         st.info("Select a well to view predictions.")
         st.stop()
