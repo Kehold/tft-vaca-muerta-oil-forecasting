@@ -781,6 +781,12 @@ elif section == "Data Explorer":
 # ---- 2) Model CV ----
 elif section == "Model CV":
     st.header("🧪 Cross-Validation Results")
+    page_guide(
+        "Model CV",
+        what="Rolling-window validation metrics (overall + per series/window) produced with the same policy used later for selection.",
+        why="Verifies generalization and stability before testing on unseen wells.",
+        good_bad="Lower RMSE/MAE is better; sMAPE < 20–25% is often decent. Big RMSE−MAE gap implies outliers impacting squared error."
+    )
 
     with st.sidebar.expander("Model CV controls", expanded=True):
         cv_hist_metric = st.radio(
@@ -818,6 +824,9 @@ elif section == "Model CV":
         else:
             st.info("No CV overall metrics found yet.")
         st.markdown('</div>', unsafe_allow_html=True)
+        
+        if overall:
+            st.caption(insight_cv_overall(overall))
 
     with right:
         st.subheader(f"{selected_label} distribution")
@@ -846,6 +855,13 @@ elif section == "Model CV":
 # ---- 3) Baselines ----
 elif section == "Baselines":
     st.header("🪵 Baselines vs TFT")
+    
+    page_guide(
+        "Baselines vs TFT",
+        what="Simple, robust baselines (NaiveDrift, ETS/HW, Theta) evaluated with the same CV as TFT.",
+        why="Contextualizes how much value TFT adds over non-neural methods.",
+        good_bad="If TFT only ties baselines, revisit features/validation; a healthy gap (lower errors) supports using TFT in production."
+    )
 
     bl_overall_path = art["baselines"]["overall_json"]
     bl_per_series_path = art["baselines"]["per_series_csv"]
@@ -875,6 +891,10 @@ elif section == "Baselines":
         except Exception:
             pass
         st.table(df_overall.set_index("model"))
+        
+        if not df_overall.empty:
+            st.caption(insight_baselines_table(df_overall))
+        
     st.markdown('</div>', unsafe_allow_html=True)
 
     st.markdown("---")
@@ -888,6 +908,7 @@ elif section == "Baselines":
                    f"Expected at: `{bl_per_series_path}`.")
     else:
         metric = st.radio("Metric", ["rmse", "mae", "smape"], index=0, horizontal=True, key="bl_metric")
+        st.caption("Overlap of colored histograms: tighter and left-shifted ⇒ more consistent, lower error.")
         fig = px.histogram(
             bl_per,
             x=metric,
