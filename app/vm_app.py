@@ -607,7 +607,6 @@ and model explainability.
 
 # ---- 1) Data Explorer ----
 elif section == "Data Explorer":
-    
     page_guide(
         "Data Explorer",
         what="Monthly oil-rate history for the selected well with optional overlays (rolling stats, HW baseline), plus ACF/PACF and STL (optional).",
@@ -781,14 +780,14 @@ elif section == "Data Explorer":
 
 # ---- 2) Model CV ----
 elif section == "Model CV":
-    st.header("🧪 Cross-Validation Results")
     page_guide(
         "Model CV",
         what="Rolling-window validation metrics (overall + per series/window) produced with the same policy used later for selection.",
         why="Verifies generalization and stability before testing on unseen wells.",
         good_bad="Lower RMSE/MAE is better; sMAPE < 20–25% is often decent. Big RMSE−MAE gap implies outliers impacting squared error."
     )
-
+    
+    st.header("🧪 Cross-Validation Results")
     with st.sidebar.expander("Model CV controls", expanded=True):
         cv_hist_metric = st.radio(
             "Histogram metric",
@@ -855,15 +854,14 @@ elif section == "Model CV":
 
 # ---- 3) Baselines ----
 elif section == "Baselines":
-    st.header("🪵 Baselines vs TFT")
-    
     page_guide(
         "Baselines vs TFT",
         what="Simple, robust baselines (NaiveDrift, ETS/HW, Theta) evaluated with the same CV as TFT.",
         why="Contextualizes how much value TFT adds over non-neural methods.",
         good_bad="If TFT only ties baselines, revisit features/validation; a healthy gap (lower errors) supports using TFT in production."
     )
-
+    
+    st.header("🪵 Baselines vs TFT")
     bl_overall_path = art["baselines"]["overall_json"]
     bl_per_series_path = art["baselines"]["per_series_csv"]
 
@@ -977,8 +975,14 @@ elif section == "Baselines":
 
 # ---- 4) Randomized Search ----
 elif section == "Randomized Search":
+    page_guide(
+        "Randomized Search",
+        what="Hyperparameter trials with scatter plots to visually relate settings to metric outcomes.",
+        why="Helps see sensitivity and promising regions before fine-tuning or BO.",
+        good_bad="Look for downward trends vs the chosen metric. Wide scatter without structure can mean the metric is insensitive or search space is too broad."
+    )
+    
     st.header("🔍 Randomized Search")
-
     trials_csv = art["search"]["trials_csv"]
     best_cfg   = art["search"]["best_config"]
 
@@ -1055,8 +1059,14 @@ elif section == "Randomized Search":
 
 # ---- 5) Test Predictions ----
 elif section == "Test Predictions":
+    page_guide(
+        "Test Predictions",
+        what="Per-well visualizations on test wells (Case B) and 5-year cumulative P10/P50/P90 (Case C).",
+        why="Shows warm-start behavior on unseen wells and production expectations over planning horizons.",
+        good_bad="In Case B, predicted bands should straddle truth without large bias; in Case C, cumulative P50 should be plausible vs analogs and uncertainty band should be reasonable."
+    )
+    
     st.header("🧪 Test Predictions (Warm-start)")
-
     preds_dir     = art["test"]["predictions_dir"]
     caseB_metrics = read_metrics_json(art["test"]["caseB_metrics"])
 
@@ -1241,6 +1251,10 @@ elif section == "Test Predictions":
                         unsafe_allow_html=True,
                     )
                     c2.plotly_chart(fig_cum, use_container_width=True)
+                    if (fig_cum is not None) and (final_p50 is not None):
+                        c2.caption("Median (P50) cumulative should sit between P10/P90 and reflect expected decline. "
+                                "Large band → higher uncertainty; very tight band → risk of overconfidence.")
+
 
     # st.caption(
     #     "This page shows Darts-rendered PNGs when available "
@@ -1251,8 +1265,14 @@ elif section == "Test Predictions":
 
 # ---- 6) Explainability ----
 elif section == "Explainability":
+    page_guide(
+        "Explainability",
+        what="Local variable importance (per well), temporal attention views, and pseudo-global importance summaries.",
+        why="Builds trust and aids troubleshooting by revealing which inputs drive forecasts and when.",
+        good_bad="Stable, physically meaningful drivers (e.g., well age, completion params) are desirable; dominance by noisy covariates may signal leakage or overfit."
+    )
+    
     st.header("🪄 Explainability")
-
     local_dir     = Path(art["explain"]["local_dir"])
     attention_dir = Path(art["explain"]["attention_dir"])
     global_csv    = Path(art["explain"]["global_csv"])
