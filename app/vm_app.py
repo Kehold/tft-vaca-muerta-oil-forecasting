@@ -1186,7 +1186,7 @@ elif section == "Test Predictions":
             name="P50 cumulative",
             line=dict(width=2)
         ))
-        fig = unify_figure_layout(fig, title=title, height=440)
+        fig = unify_figure_layout(fig, title=title, height=420)
         final_p10_total = float(cum_p10.iloc[-1]) if len(cum_p10) else None
         final_p50_total = float(cum_p50.iloc[-1]) if len(cum_p50) else None
         final_p90_total = float(cum_p90.iloc[-1]) if len(cum_p90) else None
