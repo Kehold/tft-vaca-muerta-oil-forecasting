@@ -113,6 +113,7 @@ def unify_figure_layout(fig: go.Figure, *, title: Optional[str] = None, legend_b
 # =========================
 # Utilities & Cache
 # =========================
+
 def show_image_safe(rel_path: str | Path, caption: str = "") -> None:
     img_path = ROOT / str(rel_path)
     if not img_path.exists():
@@ -435,6 +436,87 @@ def select_well_by_name(active_df: pd.DataFrame) -> Optional[int]:
     return st.sidebar.selectbox("Well (id)", well_ids, index=0 if well_ids else None, key="well_id_picker")
 
 # =========================
+# Page guides & tiny insights
+# =========================
+
+def page_guide(title: str, what: str, why: str, good_bad: str) -> None:
+    """Compact explainer, consistent across pages."""
+    with st.expander(f"🧭 What is this page?  —  {title}", expanded=False):
+        st.markdown(
+            f"""
+- **What am I looking at?** {what}
+- **Why is it relevant?** {why}
+- **Is it good or bad?** {good_bad}
+            """
+        )
+
+def _fmt_pct(x: float) -> str:
+    return f"{x:.1f}%" if np.isfinite(x) else "–"
+
+def insight_time_series(df_w: pd.DataFrame, y_col: str) -> str:
+    """Quick trend/volatility signal from the last ~24 points."""
+    s = df_w[[TIME_COL, y_col]].dropna().sort_values(TIME_COL)
+    if len(s) < 6:
+        return "Not enough history to assess trend/volatility."
+    last_n = min(24, len(s))
+    y = s[y_col].to_numpy()[-last_n:]
+    x = np.arange(last_n)
+    slope = np.polyfit(x, y, 1)[0]
+    rel_slope = slope / (np.mean(y) + 1e-9)  # per-step vs mean
+    vol = np.std(y) / (np.mean(y) + 1e-9)
+    trend_txt = (
+        "roughly flat" if abs(rel_slope) < 0.002
+        else ("upward" if slope > 0 else "downward")
+    )
+    return f"Recent trend: **{trend_txt}**; volatility (σ/μ): **{_fmt_pct(100*vol)}**."
+
+def insight_acf(lags: np.ndarray, vals: np.ndarray, ci: float, expect_season_m=12) -> str:
+    if lags.size == 0:
+        return "No ACF computed."
+    sig = [int(l) for l, v in zip(lags, vals) if l > 0 and abs(v) > ci]
+    if not sig:
+        return "No strong autocorrelation beyond lag 0 → weak persistence."
+    season_note = ""
+    if expect_season_m in sig:
+        season_note = f" Notably, lag {expect_season_m} stands out → possible yearly pattern."
+    return f"Significant autocorrelation at lags {sig[:5]} (first few).{season_note}"
+
+def insight_pacf(lags: np.ndarray, vals: np.ndarray, ci: float) -> str:
+    if lags.size == 0:
+        return "No PACF computed."
+    sig = [int(l) for l, v in zip(lags, vals) if l > 0 and abs(v) > ci]
+    if not sig:
+        return "No strong partial autocorrelation → limited direct AR structure."
+    return f"Strong partial autocorrelation at lags {sig[:4]} → potential AR order hints."
+
+def insight_cv_overall(overall: dict | None) -> str:
+    if not overall:
+        return "Overall CV metrics not found."
+    rmse = overall.get("rmse", np.nan)
+    mae  = overall.get("mae", np.nan)
+    sm   = overall.get("smape", np.nan)
+    tail = "heavy tails/outliers" if (rmse - mae) > 0.25 * (mae + 1e-9) else "balanced errors"
+    return f"Typical error MAE≈**{mae:.1f}**, RMSE≈**{rmse:.1f}** ({tail}); sMAPE≈**{sm:.1f}%**."
+
+def insight_baselines_table(df_overall: pd.DataFrame) -> str:
+    if df_overall.empty or "model" not in df_overall.columns:
+        return "No baseline summary yet."
+    if "rmse" not in df_overall.columns:
+        return "Baseline table missing RMSE."
+    df = df_overall.set_index("model")
+    if "TFT" not in df.index or df.drop(index=["TFT"], errors="ignore").empty:
+        return "Waiting for both TFT and baselines to compare."
+    tft = df.loc["TFT", "rmse"]
+    baseline_block = df.drop(index=["TFT"], errors="ignore")["rmse"]
+    best_b = baseline_block.idxmin()
+    best_rmse = float(baseline_block.min())
+    gap = (best_rmse - tft) / (tft + 1e-9) * 100
+    if best_rmse < tft:
+        return f"Best baseline **{best_b}** beats TFT by **{abs(gap):.1f}%** (RMSE)."
+    return f"**TFT** beats best baseline (**{best_b}**) by **{abs(gap):.1f}%** (RMSE)."
+
+
+# =========================
 # Sidebar Navigation
 # =========================
 st.sidebar.title("Vaca Muerta – TFT")
@@ -477,6 +559,15 @@ with st.container():
 # =========================
 
 # ---- 0) Home ----
+
+if section == "Home":
+    page_guide(
+        "Home",
+        what="High-level description of the project and how to navigate the dashboard.",
+        why="Sets context so viewers know where to find CV results, baselines, predictions, and explainability.",
+        good_bad="A clear path from data → model → selection → test → explainability indicates a healthy, reproducible workflow."
+    )
+
 if section == "Home":
     st.header("🏠 Forecasting Oil Production with Temporal Fusion Transformers")
 
