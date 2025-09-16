@@ -908,7 +908,6 @@ elif section == "Baselines":
                    f"Expected at: `{bl_per_series_path}`.")
     else:
         metric = st.radio("Metric", ["rmse", "mae", "smape"], index=0, horizontal=True, key="bl_metric")
-        st.caption("Overlap of colored histograms: tighter and left-shifted ⇒ more consistent, lower error.")
         fig = px.histogram(
             bl_per,
             x=metric,
@@ -920,6 +919,7 @@ elif section == "Baselines":
         fig.update_traces(opacity=0.65)
         fig.update_layout(bargap=0.03)
         st.plotly_chart(unify_figure_layout(fig, height=360), use_container_width=True)
+        st.caption("Overlap of colored histograms: tighter and left-shifted ⇒ more consistent, lower error.")
     st.markdown('</div>', unsafe_allow_html=True)
 
     st.markdown("---")
