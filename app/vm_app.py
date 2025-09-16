@@ -607,7 +607,6 @@ and model explainability.
 
 # ---- 1) Data Explorer ----
 elif section == "Data Explorer":
-    st.header("📊 Data Explorer")
     
     page_guide(
         "Data Explorer",
@@ -615,7 +614,9 @@ elif section == "Data Explorer":
         why="Early sense of trend, volatility and memory structure helps interpret model performance and pick sensible baselines.",
         good_bad="Stable, gently trending series with short memory are easier; long tails in ACF or frequent step changes suggest operational effects to watch."
     )
-
+    
+    st.header("📊 Data Explorer")
+    
     if active_df.empty:
         st.warning("No data found. Run `vm-prepare-data` first.")
         st.stop()
