@@ -608,6 +608,13 @@ and model explainability.
 # ---- 1) Data Explorer ----
 elif section == "Data Explorer":
     st.header("📊 Data Explorer")
+    
+    page_guide(
+        "Data Explorer",
+        what="Monthly oil-rate history for the selected well with optional overlays (rolling stats, HW baseline), plus ACF/PACF and STL (optional).",
+        why="Early sense of trend, volatility and memory structure helps interpret model performance and pick sensible baselines.",
+        good_bad="Stable, gently trending series with short memory are easier; long tails in ACF or frequent step changes suggest operational effects to watch."
+    )
 
     if active_df.empty:
         st.warning("No data found. Run `vm-prepare-data` first.")
@@ -688,6 +695,7 @@ elif section == "Data Explorer":
                 except Exception as e:
                     st.caption(f"HW overlay unavailable for this well: {e}")
             st.plotly_chart(fig_ts, use_container_width=True, config={"displayModeBar": False})
+            st.caption(insight_time_series(df_w, TARGET))
             st.caption("Note: HW overlay is a quick visual comparison. Full baseline metrics are in the **Baselines** page.")
             st.markdown('</div>', unsafe_allow_html=True)
 
@@ -712,6 +720,11 @@ elif section == "Data Explorer":
             fig.add_hrect(y0=-ci, y1=ci, opacity=0.15, line_width=0)
             fig.add_bar(x=lags, y=vals)
             st.plotly_chart(unify_figure_layout(fig, height=300), use_container_width=True)
+            
+            if acf_kind == "PACF":
+                st.caption(insight_pacf(lags, vals, ci))
+            else:
+                st.caption(insight_acf(lags, vals, ci))
         else:
             st.info("Not enough data points to compute correlations for this well.")
 
@@ -738,6 +751,21 @@ elif section == "Data Explorer":
         else:
             fig_stl = plot_stl_small_multiples(stl_res, title_prefix=f"STL (Well {well_id}, period={stl_period})")
             st.plotly_chart(fig_stl, use_container_width=True, config={"displayModeBar": False})
+            
+            if stl_res is not None:
+                # relative magnitudes of components
+                obs = np.asarray(stl_res["observed"], float)
+                trend = np.asarray(stl_res["trend"], float)
+                seas = np.asarray(stl_res["seasonal"], float)
+                resid = np.asarray(stl_res["resid"], float)
+                def _share(a): 
+                    v = np.var(a)
+                    return v / (np.var(obs)+1e-9)
+                st.caption(
+                    f"STL shares — trend≈{_share(trend):.2f}, seasonal≈{_share(seas):.2f}, residual≈{_share(resid):.2f}. "
+                    "Higher trend/seasonal shares → more predictable structure."
+                )
+            
         st.markdown('</div>', unsafe_allow_html=True)
 
     # Raw table (filtered to the selected well)
