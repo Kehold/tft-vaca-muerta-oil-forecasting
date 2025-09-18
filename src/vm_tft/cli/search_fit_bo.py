@@ -33,7 +33,7 @@ from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import OrdinalEncoder, MinMaxScaler
 from sklearn.impute import SimpleImputer
 
-from darts.timeseries import TimeSeries
+from darts.timeseries import TimeSeries, concatenate
 from darts.dataprocessing.transformers import Scaler, StaticCovariatesTransformer, InvertibleMapper
 from darts.dataprocessing.pipeline import Pipeline as DartsPipeline
 from darts.utils.callbacks import TFMProgressBar
@@ -88,6 +88,54 @@ def _make_scalers(use_log1p: bool, log_future: bool, has_past: bool, has_future:
         x_fut    = Scaler() if has_future else None
     return y_scaler, x_past, x_fut
 
+def _fit_global_scaler(transformer, series_list):
+    """
+    Fit a Darts Scaler (or DartsPipeline of transforms) 'globally' by stacking
+    values from many TimeSeries into a single synthetic TimeSeries that uses a
+    RangeIndex (avoids datetime overflow). Works for single- or multi-component
+    series. NaNs are dropped row-wise before stacking.
+    """
+    if transformer is None or not series_list:
+        return
+
+    # Always operate on a list
+    seq = list(series_list)
+
+    blocks = []
+    for s in seq:
+        # Get numpy values as (time, component[, sample])
+        arr = s.values(copy=False)
+        if arr.ndim == 3:        # (T, C, S) -> (T, C)
+            arr = arr[:, :, 0]
+        elif arr.ndim == 1:      # (T,) -> (T, 1)
+            arr = arr[:, None]
+
+        # Drop any rows that contain NaNs across components
+        if np.isnan(arr).any():
+            mask = ~np.any(np.isnan(arr), axis=1)
+            arr = arr[mask]
+
+        if arr.size:
+            blocks.append(arr)
+
+    if not blocks:
+        # nothing to fit on
+        return
+
+    big = np.concatenate(blocks, axis=0)  # stack along "time"
+    # Build a synthetic series with an integer RangeIndex (no datetimes)
+    mega = TimeSeries.from_times_and_values(times=pd.RangeIndex(len(big)), values=big)
+    transformer.fit(mega)
+
+def _transform_each(transformer, series_list):
+    """
+    Apply a transformer that was fitted on ONE series to MANY series
+    by transforming them one-by-one and returning a list.
+    """
+    if transformer is None or not series_list:
+        return None
+    return [transformer.transform(s) for s in series_list]
+
 def _build_future_covariates(df: pd.DataFrame) -> pd.DataFrame:
     """
     Build FUTURE covariates by cfg. If FUTURE_REALS includes 'dca_bpd_log1p',
@@ -112,7 +160,6 @@ def _build_future_covariates(df: pd.DataFrame) -> pd.DataFrame:
         fut = fut_age
     return fut
 
-
 def _suggest_params(trial: optuna.trial.Trial) -> dict:
     heads = trial.suggest_categorical("num_attention_heads", [4, 8])
     hidden_size = trial.suggest_categorical(
@@ -123,15 +170,14 @@ def _suggest_params(trial: optuna.trial.Trial) -> dict:
         "output_chunk_length":    FORECAST_H,
         "hidden_size":            int(hidden_size),
         "num_attention_heads":    int(heads),
-        "lstm_layers":            trial.suggest_int("lstm_layers", 1, 3),
-        "hidden_continuous_size": trial.suggest_categorical("hidden_continuous_size", [16, 24, 32]),
-        "dropout":                trial.suggest_float("dropout", 0.05, 0.25, step=0.05),
+        "lstm_layers":            trial.suggest_int("lstm_layers", 2, 3),
+        "hidden_continuous_size": trial.suggest_categorical("hidden_continuous_size", [24, 32]),
+        "dropout":                trial.suggest_float("dropout", 0.05, 0.15, step=0.05),
         "batch_size":             trial.suggest_categorical("batch_size", [64, 128]),
-        "n_epochs":               trial.suggest_int("n_epochs", 30, 50, step=10),
-        "lr":                     trial.suggest_float("lr", 5e-4, 3e-3, log=True),
-        "weight_decay":           trial.suggest_float("weight_decay", 1e-6, 1e-2, log=True),
+        "n_epochs":               trial.suggest_int("n_epochs", 30, 40, step=10),
+        "lr":                     trial.suggest_float("lr", 5e-4, 1.5e-3, log=True),
+        "weight_decay":           trial.suggest_float("weight_decay", 1e-6, 5e-4, log=True),
     }
-
 
 # ----------------------- main -----------------------
 def main(argv: Optional[List[str]] = None) -> None:
@@ -211,9 +257,25 @@ def main(argv: Optional[List[str]] = None) -> None:
         use_log1p=use_log1p, log_future=args.log_future,
         has_past=(past_covariates is not None), has_future=(future_covariates is not None),
     )
-    series_scaled = y_scaler.fit_transform(series)
-    past_covs_scaled   = x_past_s.fit_transform(past_covariates) if x_past_s else None
-    future_covs_scaled = x_fut_s.fit_transform(future_covariates) if x_fut_s else None
+    
+    # Fit y-scaler globally on TRAIN/VAL
+    _fit_global_scaler(y_scaler, series)
+    series_scaled = _transform_each(y_scaler, list(series))
+    # series_scaled = y_scaler.fit_transform(series)
+    
+    if x_past_s is not None and past_covariates is not None:
+        _fit_global_scaler(x_past_s, past_covariates)
+        past_covs_scaled = _transform_each(x_past_s, list(past_covariates))
+    else:
+        past_covs_scaled = None
+    # past_covs_scaled   = x_past_s.fit_transform(past_covariates) if x_past_s else None
+    
+    if x_fut_s is not None and future_covariates is not None:
+        _fit_global_scaler(x_fut_s, future_covariates)
+        future_covs_scaled = _transform_each(x_fut_s, list(future_covariates))
+    else:
+        future_covs_scaled = None
+    # future_covs_scaled = x_fut_s.fit_transform(future_covariates) if x_fut_s else None
 
     categorical_embedding_sizes = {col: int(df[col].nunique(dropna=True)) for col in STATIC_CATS}
     add_encoders = default_add_encoders(encode_year)

@@ -14,7 +14,7 @@ from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import OrdinalEncoder, MinMaxScaler
 from sklearn.impute import SimpleImputer
 
-from darts.timeseries import TimeSeries
+from darts.timeseries import TimeSeries, concatenate
 from darts.dataprocessing.transformers import Scaler, StaticCovariatesTransformer, InvertibleMapper
 from darts.dataprocessing.pipeline import Pipeline as DartsPipeline
 
@@ -86,6 +86,53 @@ def _make_scalers(
 
     return y_scaler, x_past, x_fut
 
+def _fit_global_scaler(transformer, series_list):
+    """
+    Fit a Darts Scaler (or DartsPipeline of transforms) 'globally' by stacking
+    values from many TimeSeries into a single synthetic TimeSeries that uses a
+    RangeIndex (avoids datetime overflow). Works for single- or multi-component
+    series. NaNs are dropped row-wise before stacking.
+    """
+    if transformer is None or not series_list:
+        return
+
+    # Always operate on a list
+    seq = list(series_list)
+
+    blocks = []
+    for s in seq:
+        # Get numpy values as (time, component[, sample])
+        arr = s.values(copy=False)
+        if arr.ndim == 3:        # (T, C, S) -> (T, C)
+            arr = arr[:, :, 0]
+        elif arr.ndim == 1:      # (T,) -> (T, 1)
+            arr = arr[:, None]
+
+        # Drop any rows that contain NaNs across components
+        if np.isnan(arr).any():
+            mask = ~np.any(np.isnan(arr), axis=1)
+            arr = arr[mask]
+
+        if arr.size:
+            blocks.append(arr)
+
+    if not blocks:
+        # nothing to fit on
+        return
+
+    big = np.concatenate(blocks, axis=0)  # stack along "time"
+    # Build a synthetic series with an integer RangeIndex (no datetimes)
+    mega = TimeSeries.from_times_and_values(times=pd.RangeIndex(len(big)), values=big)
+    transformer.fit(mega)
+
+def _transform_each(transformer, series_list):
+    """
+    Apply a transformer that was fitted on ONE series to MANY series
+    by transforming them one-by-one and returning a list.
+    """
+    if transformer is None or not series_list:
+        return None
+    return [transformer.transform(s) for s in series_list]
 
 def _lower_is_better(metric_key: str) -> bool:
     # most are minimized; MIC is maximized
@@ -191,9 +238,24 @@ def main(argv: list[str] | None = None) -> None:
         has_future=(future_covariates is not None),
     )
 
-    series_scaled = y_scaler.fit_transform(series)
-    past_covs_scaled = x_scaler_past.fit_transform(past_covariates) if x_scaler_past else None
-    future_covs_scaled = x_scaler_future.fit_transform(future_covariates) if x_scaler_future else None
+    # Fit y-scaler globally on TRAIN/VAL
+    _fit_global_scaler(y_scaler, series)
+    series_scaled = _transform_each(y_scaler, list(series))
+    # series_scaled = y_scaler.fit_transform(series)
+    
+    if x_scaler_past is not None and past_covariates is not None:
+        _fit_global_scaler(x_scaler_past, past_covariates)
+        past_covs_scaled = _transform_each(x_scaler_past, list(past_covariates))
+    else:
+        past_covs_scaled = None
+    # past_covs_scaled = x_scaler_past.fit_transform(past_covariates) if x_scaler_past else None
+    
+    if x_scaler_future is not None and future_covariates is not None:
+        _fit_global_scaler(x_scaler_future, future_covariates)
+        future_covs_scaled = _transform_each(x_scaler_future, list(future_covariates))
+    else:
+        future_covs_scaled = None
+    # future_covs_scaled = x_scaler_future.fit_transform(future_covariates) if x_scaler_future else None
 
     # ---------- model ----------
     add_encoders = default_add_encoders(encode_year)

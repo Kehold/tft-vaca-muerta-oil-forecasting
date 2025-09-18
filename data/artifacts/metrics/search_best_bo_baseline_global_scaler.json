@@ -1,0 +1,22 @@
+{
+  "cfg": {
+    "input_chunk_length": 24,
+    "output_chunk_length": 6,
+    "hidden_size": 64,
+    "num_attention_heads": 4,
+    "lstm_layers": 3,
+    "hidden_continuous_size": 24,
+    "dropout": 0.05,
+    "batch_size": 128,
+    "n_epochs": 30,
+    "lr": 0.0005717379762280126,
+    "weight_decay": 2.1700394405050153e-05
+  },
+  "metrics": {
+    "mql_0_50": 57.65802030901929,
+    "rmse": 65.17477568165891,
+    "mae": 57.65802030901929,
+    "smape": 59.24788186531264,
+    "mic_10_90": 0.8218455743879471
+  }
+}

@@ -18,9 +18,14 @@ from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import OrdinalEncoder, MinMaxScaler
 from sklearn.impute import SimpleImputer
 
-from darts.timeseries import TimeSeries
-from darts.dataprocessing.transformers import Scaler, StaticCovariatesTransformer
+from darts.timeseries import TimeSeries, concatenate
+from darts.dataprocessing.transformers import (
+    Scaler,
+    StaticCovariatesTransformer,
+    InvertibleMapper,
+)
 from darts.explainability import TFTExplainer
+from darts.dataprocessing.pipeline import Pipeline as DartsPipeline
 
 from vm_tft.cfg import (
     ALL_FILE, TEST_FILE, FREQ,
@@ -37,6 +42,81 @@ from vm_tft.io_utils import ensure_dir, artifact_path, set_seeds
 # =========================
 # Helpers
 # =========================
+
+def _make_scalers(
+    use_log1p: bool,
+    log_future: bool,
+    has_past: bool,
+    has_future: bool,
+):
+    """
+    Build Darts transformers:
+      y:      (log1p -> MinMax) or (MinMax)
+      past:   same as y when present
+      future: MinMax; add log1p only if log_future=True
+    """
+    if use_log1p:
+        log_mapper = InvertibleMapper(fn=np.log1p, inverse_fn=np.expm1, name="log1p")
+        y_scaler = DartsPipeline([log_mapper, Scaler()])
+        x_past   = DartsPipeline([log_mapper, Scaler()]) if has_past else None
+        if has_future:
+            x_fut = DartsPipeline([log_mapper, Scaler()]) if log_future else Scaler()
+        else:
+            x_fut = None
+    else:
+        y_scaler = Scaler()
+        x_past   = Scaler() if has_past else None
+        x_fut    = Scaler() if has_future else None
+    return y_scaler, x_past, x_fut
+
+def _fit_global_scaler(transformer, series_list):
+    """
+    Fit a Darts Scaler (or DartsPipeline of transforms) 'globally' by stacking
+    values from many TimeSeries into a single synthetic TimeSeries that uses a
+    RangeIndex (avoids datetime overflow). Works for single- or multi-component
+    series. NaNs are dropped row-wise before stacking.
+    """
+    if transformer is None or not series_list:
+        return
+
+    # Always operate on a list
+    seq = list(series_list)
+
+    blocks = []
+    for s in seq:
+        # Get numpy values as (time, component[, sample])
+        arr = s.values(copy=False)
+        if arr.ndim == 3:        # (T, C, S) -> (T, C)
+            arr = arr[:, :, 0]
+        elif arr.ndim == 1:      # (T,) -> (T, 1)
+            arr = arr[:, None]
+
+        # Drop any rows that contain NaNs across components
+        if np.isnan(arr).any():
+            mask = ~np.any(np.isnan(arr), axis=1)
+            arr = arr[mask]
+
+        if arr.size:
+            blocks.append(arr)
+
+    if not blocks:
+        # nothing to fit on
+        return
+
+    big = np.concatenate(blocks, axis=0)  # stack along "time"
+    # Build a synthetic series with an integer RangeIndex (no datetimes)
+    mega = TimeSeries.from_times_and_values(times=pd.RangeIndex(len(big)), values=big)
+    transformer.fit(mega)
+
+def _transform_each(transformer, series_list):
+    """
+    Apply a transformer that was fitted on ONE series to MANY series
+    by transforming them one-by-one and returning a list.
+    """
+    if transformer is None or not series_list:
+        return None
+    return [transformer.transform(s) for s in series_list]
+
 
 def _as_list(x):
     if x is None:
@@ -362,7 +442,7 @@ def export_pseudo_global_vi(
 
 def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(description="TFT Explainability (local + pseudo-global)")
-    parser.add_argument("--model-path", type=str, default=str(artifact_path("runs") / "search_bo/2025-09-12_10-02-41__bo_baseline_scaler/model_best.pt"))
+    parser.add_argument("--model-path", type=str, default=str(artifact_path("runs") / "search_bo/2025-09-17_20-18-54__bo_baseline_global_scaler_tight/model_best.pt"))
     parser.add_argument("--eval-set", type=str, choices=["test", "train"], default="test",
                         help="use TEST (default) or TRAIN for foreground explanations")
     parser.add_argument("--local-wells", type=str, default="0,5,18",
@@ -375,9 +455,14 @@ def main(argv: list[str] | None = None) -> None:
                         help="comma-separated indices for pseudo-global VI (empty => auto sample)")
     parser.add_argument("--matmul-precision", type=str, choices=["highest", "high", "medium"], default="high")
     parser.add_argument("--seed", type=int, default=42)
-    parser.add_argument("--out-root", type=str, default=str(Path(ARTIFACTS) / "explain/"))
+    parser.add_argument("--out-root", type=str, default=str(Path(ARTIFACTS) / "runs/explain/bo_baseline_global_scaler"))
+    
+    # transforms
+    parser.add_argument("--no-log1p", action="store_true", help="Disable log1p (default: enabled).")
+    parser.add_argument("--log-future", action="store_true",
+                        help="Also apply log1p to future covariates (default: off).")
+    
     args = parser.parse_args(argv)
-
     torch.set_float32_matmul_precision(args.matmul_precision)
     set_seeds(args.seed)
 
@@ -414,79 +499,93 @@ def main(argv: list[str] | None = None) -> None:
 
     # future covs (ensure coverage)
     
-    fut_age_all = build_future_covariates_well_age_full(
-        df=df_all, time_col=TIME_COL, group_col=GROUP_COL,
-        completion_col="completion_date", horizon=12, freq=FREQ
-    )
-    
-    fut_dca_all, dca_pars_all = build_future_covariates_dca_full(
-        df=df_all, time_col=TIME_COL, group_col=GROUP_COL,
-        target_col=TARGET, horizon=12, freq=FREQ,
-        fit_k=INPUT_CHUNK, params_out=True
-    )
-    
-    # after building fut_dca with 'dca_bpd'
-    fut_dca_all["dca_bpd_log1p"] = np.log1p(fut_dca_all["dca_bpd"])
-    
-    # merge the FUTURE covariates on [group, time]
-    fut_df_all = fut_age_all.merge(fut_dca_all[[GROUP_COL, TIME_COL, "dca_bpd_log1p"]], on=[GROUP_COL, TIME_COL], how="left")
-    
-    fut_age_eval = build_future_covariates_well_age_full(
-        df=df_eval, time_col=TIME_COL, group_col=GROUP_COL,
-        completion_col="completion_date", horizon=12, freq=FREQ
-    )
-    
-    fut_dca_eval, dca_pars_eval = build_future_covariates_dca_full(
-        df=df_eval, time_col=TIME_COL, group_col=GROUP_COL,
-        target_col=TARGET, horizon=12, freq=FREQ,
-        fit_k=INPUT_CHUNK, params_out=True
-    )
-    
-    # after building fut_dca with 'dca_bpd'
-    fut_dca_eval["dca_bpd_log1p"] = np.log1p(fut_dca_eval["dca_bpd"])
-    
-        # merge the FUTURE covariates on [group, time]
-    fut_df_eval = fut_age_eval.merge(fut_dca_eval[[GROUP_COL, TIME_COL, "dca_bpd_log1p"]], on=[GROUP_COL, TIME_COL], how="left")
-    
-    
-    # fut_all_df = build_future_covariates_well_age_full(
+    # fut_age_all = build_future_covariates_well_age_full(
     #     df=df_all, time_col=TIME_COL, group_col=GROUP_COL,
-    #     completion_col="completion_date", horizon=12, freq=FREQ,
+    #     completion_col="completion_date", horizon=12, freq=FREQ
     # )
-    # fut_eval_df = build_future_covariates_well_age_full(
+    
+    # fut_dca_all, dca_pars_all = build_future_covariates_dca_full(
+    #     df=df_all, time_col=TIME_COL, group_col=GROUP_COL,
+    #     target_col=TARGET, horizon=12, freq=FREQ,
+    #     fit_k=INPUT_CHUNK, params_out=True
+    # )
+    
+    # # after building fut_dca with 'dca_bpd'
+    # fut_dca_all["dca_bpd_log1p"] = np.log1p(fut_dca_all["dca_bpd"])
+    
+    # # merge the FUTURE covariates on [group, time]
+    # fut_df_all = fut_age_all.merge(fut_dca_all[[GROUP_COL, TIME_COL, "dca_bpd_log1p"]], on=[GROUP_COL, TIME_COL], how="left")
+    
+    # fut_age_eval = build_future_covariates_well_age_full(
     #     df=df_eval, time_col=TIME_COL, group_col=GROUP_COL,
-    #     completion_col="completion_date", horizon=12, freq=FREQ,
+    #     completion_col="completion_date", horizon=12, freq=FREQ
     # )
+    
+    # fut_dca_eval, dca_pars_eval = build_future_covariates_dca_full(
+    #     df=df_eval, time_col=TIME_COL, group_col=GROUP_COL,
+    #     target_col=TARGET, horizon=12, freq=FREQ,
+    #     fit_k=INPUT_CHUNK, params_out=True
+    # )
+    
+    # # after building fut_dca with 'dca_bpd'
+    # fut_dca_eval["dca_bpd_log1p"] = np.log1p(fut_dca_eval["dca_bpd"])
+    
+    #     # merge the FUTURE covariates on [group, time]
+    # fut_df_eval = fut_age_eval.merge(fut_dca_eval[[GROUP_COL, TIME_COL, "dca_bpd_log1p"]], on=[GROUP_COL, TIME_COL], how="left")
+    
+    fut_all_df = build_future_covariates_well_age_full(
+        df=df_all, time_col=TIME_COL, group_col=GROUP_COL,
+        completion_col="completion_date", horizon=12, freq=FREQ,
+    )
+    fut_eval_df = build_future_covariates_well_age_full(
+        df=df_eval, time_col=TIME_COL, group_col=GROUP_COL,
+        completion_col="completion_date", horizon=12, freq=FREQ,
+    )
+    
     future_all = TimeSeries.from_group_dataframe(
-        df=fut_df_all, time_col=TIME_COL, group_cols=GROUP_COL,
+        df=fut_all_df, time_col=TIME_COL, group_cols=GROUP_COL,
         value_cols=FUTURE_REALS, freq=FREQ,
     )
     future_eval = TimeSeries.from_group_dataframe(
-        df=fut_df_eval, time_col=TIME_COL, group_cols=GROUP_COL,
+        df=fut_eval_df, time_col=TIME_COL, group_cols=GROUP_COL,
         value_cols=FUTURE_REALS, freq=FREQ,
     )
+    
+    # scalers (fit on ALL → transform EVAL)
+    use_log1p = not args.no_log1p
+    y_scaler, x_scaler_past, x_scaler_future = _make_scalers(
+        use_log1p=use_log1p, log_future=args.log_future,
+        has_past=(past_eval is not None), has_future=(future_eval is not None),
+    )
+    
+    # Fit y-scaler globally on TRAIN/VAL
+    _fit_global_scaler(y_scaler, series_all)
+    series_eval_scaled = _transform_each(y_scaler, list(series_eval))
+    
+    # y_scaler = Scaler(); y_scaler.fit(series_all)
+    # series_eval_scaled = y_scaler.transform(series_eval)
 
-    # scalers (fit on ALL, apply to EVAL)
-    y_scaler = Scaler(); y_scaler.fit(series_all)
-    series_eval_scaled = y_scaler.transform(series_eval)
+    # x_scaler_past = Scaler() if past_all is not None else None
+    # x_scaler_future = Scaler() if future_all is not None else None
 
-    x_scaler_past = Scaler() if past_all is not None else None
-    x_scaler_future = Scaler() if future_all is not None else None
-
-    if x_scaler_past:
+    if x_scaler_past and past_eval is not None:
         past_all_ts = TimeSeries.from_group_dataframe(
             df=df_all[[TIME_COL, GROUP_COL] + PAST_REALS].copy(),
             time_col=TIME_COL, group_cols=GROUP_COL,
             value_cols=PAST_REALS, freq=FREQ,
         )
-        _ = x_scaler_past.fit_transform(past_all_ts)
-        past_eval_scaled = x_scaler_past.transform(past_eval) if past_eval is not None else None
+        _fit_global_scaler(x_scaler_past, past_all_ts)
+        # _ = x_scaler_past.fit_transform(past_all_ts)
+        past_eval_scaled = _transform_each(x_scaler_past, list(past_eval))
+        # past_eval_scaled = x_scaler_past.transform(past_eval) if past_eval is not None else None
     else:
         past_eval_scaled = None
 
-    if x_scaler_future:
-        _ = x_scaler_future.fit_transform(future_all)
-        future_eval_scaled = x_scaler_future.transform(future_eval)
+    if x_scaler_future and future_eval is not None:
+        _fit_global_scaler(x_scaler_future, future_all)
+        # _ = x_scaler_future.fit_transform(future_all)
+        future_eval_scaled = _transform_each(x_scaler_future, list(future_eval))
+        # future_eval_scaled = x_scaler_future.transform(future_eval)
     else:
         future_eval_scaled = None
 

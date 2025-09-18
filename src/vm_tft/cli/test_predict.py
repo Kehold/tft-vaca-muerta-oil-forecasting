@@ -17,7 +17,7 @@ from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import OrdinalEncoder, MinMaxScaler
 from sklearn.impute import SimpleImputer
 
-from darts.timeseries import TimeSeries
+from darts.timeseries import TimeSeries, concatenate
 from darts.dataprocessing.transformers import (
     Scaler,
     StaticCovariatesTransformer,
@@ -67,6 +67,54 @@ def _make_scalers(
         x_past   = Scaler() if has_past else None
         x_fut    = Scaler() if has_future else None
     return y_scaler, x_past, x_fut
+
+def _fit_global_scaler(transformer, series_list):
+    """
+    Fit a Darts Scaler (or DartsPipeline of transforms) 'globally' by stacking
+    values from many TimeSeries into a single synthetic TimeSeries that uses a
+    RangeIndex (avoids datetime overflow). Works for single- or multi-component
+    series. NaNs are dropped row-wise before stacking.
+    """
+    if transformer is None or not series_list:
+        return
+
+    # Always operate on a list
+    seq = list(series_list)
+
+    blocks = []
+    for s in seq:
+        # Get numpy values as (time, component[, sample])
+        arr = s.values(copy=False)
+        if arr.ndim == 3:        # (T, C, S) -> (T, C)
+            arr = arr[:, :, 0]
+        elif arr.ndim == 1:      # (T,) -> (T, 1)
+            arr = arr[:, None]
+
+        # Drop any rows that contain NaNs across components
+        if np.isnan(arr).any():
+            mask = ~np.any(np.isnan(arr), axis=1)
+            arr = arr[mask]
+
+        if arr.size:
+            blocks.append(arr)
+
+    if not blocks:
+        # nothing to fit on
+        return
+
+    big = np.concatenate(blocks, axis=0)  # stack along "time"
+    # Build a synthetic series with an integer RangeIndex (no datetimes)
+    mega = TimeSeries.from_times_and_values(times=pd.RangeIndex(len(big)), values=big)
+    transformer.fit(mega)
+
+def _transform_each(transformer, series_list):
+    """
+    Apply a transformer that was fitted on ONE series to MANY series
+    by transforming them one-by-one and returning a list.
+    """
+    if transformer is None or not series_list:
+        return None
+    return [transformer.transform(s) for s in series_list]
 
 
 def _maybe_ts_from_group_df(df: pd.DataFrame, cols: list[str] | None) -> Optional[List[TimeSeries]]:
@@ -368,7 +416,7 @@ def _plot_prediction_future(res, title: str) -> plt.Figure:
 
 def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(description="Warm-start evaluation on TEST set (Case B) and Future Forecasts (Case C)")
-    parser.add_argument("--model-path", type=str, default=str(artifact_path("runs") / "search_bo/2025-09-14_12-13-12__bo_baseline_rel_var/model_best.pt"))
+    parser.add_argument("--model-path", type=str, default=str(artifact_path("runs") / "search_bo/2025-09-17_20-18-54__bo_baseline_global_scaler_tight/model_best.pt"))
     parser.add_argument("--warm-months", type=int, default=36, help="months of initial history provided")
 
     # Which cases to run (A removed)
@@ -487,7 +535,6 @@ def main(argv: list[str] | None = None) -> None:
     # # merge the FUTURE covariates on [group, time]
     # fut_df_test = fut_age_test.merge(fut_dca_test[[GROUP_COL, TIME_COL, "dca_bpd_log1p"]], on=[GROUP_COL, TIME_COL], how="left")    
     
-    
     fut_df_test = build_future_covariates_well_age_full(
         df=df_test, time_col=TIME_COL, group_col=GROUP_COL,
         completion_col="completion_date",
@@ -505,18 +552,27 @@ def main(argv: list[str] | None = None) -> None:
         use_log1p=use_log1p, log_future=args.log_future,
         has_past=(past_covs_test is not None), has_future=(future_covs_test is not None),
     )
-    y_scaler.fit(series_all)
-    series_test_scaled = y_scaler.transform(series_test)
+    
+    # Fit y-scaler globally on TRAIN/VAL
+    _fit_global_scaler(y_scaler, series_all)
+    series_test_scaled = _transform_each(y_scaler, list(series_test))
+    
+    # y_scaler.fit(series_all)
+    # series_test_scaled = y_scaler.transform(series_test)
 
     if x_scaler_past and past_covs_test is not None:
-        x_scaler_past.fit(past_covs_all)
-        past_covs_test_scaled = x_scaler_past.transform(past_covs_test)
+        _fit_global_scaler(x_scaler_past, past_covs_all)
+        # x_scaler_past.fit(past_covs_all)
+        past_covs_test_scaled = _transform_each(x_scaler_past, list(past_covs_test))
+        # past_covs_test_scaled = x_scaler_past.transform(past_covs_test)
     else:
         past_covs_test_scaled = None
 
     if x_scaler_future and future_covs_test is not None:
-        x_scaler_future.fit(future_covs_all)
-        future_covs_test_scaled = x_scaler_future.transform(future_covs_test)
+        _fit_global_scaler(x_scaler_future, future_covs_all)
+        # x_scaler_future.fit(future_covs_all)
+        future_covs_test_scaled = _transform_each(x_scaler_future, list(future_covs_test))
+        # future_covs_test_scaled = x_scaler_future.transform(future_covs_test)
     else:
         future_covs_test_scaled = None
 
